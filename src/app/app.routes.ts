@@ -6,12 +6,12 @@ const placeholder = (title: string, description: string) => ({
 });
 
 export const routes: Routes = [
-  { path: '', pathMatch: 'full', redirectTo: 'inicio' },
   {
-    path: 'inicio',
+    path: '',
     loadComponent: async () => (await import('./pages/placeholder.page')).PlaceholderPage,
     data: placeholder('Inicio', 'Resumen operativo y accesos rápidos.'),
   },
+  { path: 'inicio', redirectTo: '', pathMatch: 'full' },
   {
     path: 'captura',
     loadComponent: async () => (await import('./pages/capture.page')).CapturePage,
