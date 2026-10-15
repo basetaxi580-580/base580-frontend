@@ -14,8 +14,11 @@ export const routes: Routes = [
   },
   {
     path: 'captura',
-    loadComponent: async () => (await import('./pages/placeholder.page')).PlaceholderPage,
-    data: placeholder('Captura', 'Pantalla para registro y edición operativa.'),
+    loadComponent: async () => (await import('./pages/capture.page')).CapturePage,
+  },
+  {
+    path: 'captura/:id',
+    loadComponent: async () => (await import('./pages/capture.page')).CapturePage,
   },
   {
     path: 'boletos',
