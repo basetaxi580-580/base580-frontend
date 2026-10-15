@@ -1,6 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { Component } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
 type NavItem = {
@@ -11,31 +10,29 @@ type NavItem = {
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule, RouterLink, RouterLinkActive, RouterOutlet],
+  imports: [CommonModule, RouterLink, RouterLinkActive, RouterOutlet],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
 export class App {
-  protected readonly userName = signal('Gonzalo Carreto Perez');
-  protected readonly currentDate = signal(
-    new Intl.DateTimeFormat('es-MX', {
-      weekday: 'long',
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-    }).format(new Date()),
-  );
-
-  protected readonly searchQuery = '';
+  protected readonly userName = 'Gonzalo Carreto Perez';
+  protected readonly currentDate = new Intl.DateTimeFormat('es-MX', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date());
 
   protected readonly navItems: NavItem[] = [
-    { label: 'Inicio', path: '/', icon: '⌂' },
+    { label: 'Inicio', path: '/inicio', icon: '⌂' },
     { label: 'Captura', path: '/captura', icon: '⌁' },
     { label: 'Boletos', path: '/boletos', icon: '⌘' },
     { label: 'Operaciones', path: '/operaciones', icon: '◫' },
     { label: 'Reimpresión Ticket', path: '/reimpresion-ticket', icon: '⎘' },
     { label: 'Cancelación', path: '/cancelacion', icon: '✕' },
     { label: 'Reportes', path: '/reportes', icon: '▤' },
+    { label: 'Auditoría', path: '/auditoria', icon: '☰' },
+    { label: 'Catálogos', path: '/catalogos', icon: '⚙' },
     { label: 'Credenciales', path: '/credenciales', icon: '◉' },
     { label: 'Engomados', path: '/engomados', icon: '▣' },
     { label: 'Lista de precios', path: '/lista-precios', icon: '$' },

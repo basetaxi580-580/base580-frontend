@@ -34,6 +34,21 @@ export type AuditEvent = {
 
 export type TimelineEntry = AuditEvent & { type: string };
 
+export type CatalogItem = {
+  code: string;
+  label: string;
+  active: boolean;
+};
+
+export type PriceItem = {
+  code: string;
+  label: string;
+  zone: string;
+  terminal: string;
+  price: number;
+  active: boolean;
+};
+
 @Injectable({ providedIn: 'root' })
 export class MemberStore {
   private readonly members = signal<Record<string, MemberProfile>>({
@@ -97,6 +112,37 @@ export class MemberStore {
     ],
   });
 
+  private readonly engomados = signal<CatalogItem[]>([
+    { code: '1018', label: 'Engomado 1018', active: true },
+    { code: '1042', label: 'Engomado 1042', active: true },
+    { code: '1099', label: 'Engomado 1099', active: false },
+  ]);
+
+  private readonly priceList = signal<PriceItem[]>([
+    { code: 'P-8', label: 'Primera / Zona 8', zone: '8', terminal: 'P', price: 173, active: true },
+    { code: 'T-8', label: 'Terminal / Zona 8', zone: '8', terminal: 'T', price: 145, active: true },
+    { code: 'P-9', label: 'Primera / Zona 9', zone: '9', terminal: 'P', price: 180, active: false },
+  ]);
+
+  private readonly statuses = signal<CatalogItem[]>([
+    { code: 'OK', label: 'Operativo', active: true },
+    { code: 'PENDIENTE', label: 'Pendiente', active: true },
+    { code: 'INACTIVO', label: 'Inactivo', active: true },
+    { code: 'VENCIDO', label: 'Vencido', active: true },
+  ]);
+
+  private readonly cancelReasons = signal<CatalogItem[]>([
+    { code: 'CAPTURA', label: 'Error de captura', active: true },
+    { code: 'DUPLICADA', label: 'Operación duplicada', active: true },
+    { code: 'USUARIO', label: 'Solicitud del usuario', active: true },
+  ]);
+
+  private readonly memberTypes = signal<CatalogItem[]>([
+    { code: 'EMP', label: 'Empleado', active: true },
+    { code: 'SOC', label: 'Socio', active: true },
+    { code: 'VIS', label: 'Visitante', active: false },
+  ]);
+
   member(id: string): MemberProfile | undefined {
     return this.members()[id];
   }
@@ -115,11 +161,15 @@ export class MemberStore {
       [id]: updated,
     }));
 
-    this.addHistory(id, {
-      title: 'Ficha actualizada',
-      detail: 'Se actualizaron datos permitidos del socio desde captura.',
-      date: 'Ahora',
-    }, 'socio');
+    this.addHistory(
+      id,
+      {
+        title: 'Ficha actualizada',
+        detail: 'Se actualizaron datos permitidos del socio desde captura.',
+        date: 'Ahora',
+      },
+      'socio',
+    );
   }
 
   addHistory(id: string, event: MemberHistoryEvent, type = 'general'): void {
@@ -134,10 +184,7 @@ export class MemberStore {
       },
     }));
 
-    this.audit.update((store) => ({
-      ...store,
-      [id]: [{ type, ...event }, ...(store[id] ?? [])].slice(0, 20),
-    }));
+    this.addAudit(id, event, type);
   }
 
   addAudit(id: string, event: AuditEvent, type = 'general'): void {
@@ -149,5 +196,50 @@ export class MemberStore {
 
   timeline(id: string): TimelineEntry[] {
     return this.audit()[id] ?? [];
+  }
+
+  engomadoCatalog(): CatalogItem[] {
+    return this.engomados();
+  }
+
+  priceCatalog(): PriceItem[] {
+    return this.priceList();
+  }
+
+  statusCatalog(): CatalogItem[] {
+    return this.statuses();
+  }
+
+  cancelReasonsCatalog(): CatalogItem[] {
+    return this.cancelReasons();
+  }
+
+  memberTypesCatalog(): CatalogItem[] {
+    return this.memberTypes();
+  }
+
+  addEngomado(item: CatalogItem): void {
+    this.engomados.update((items) => [item, ...items]);
+    this.addAudit('398', { title: 'Engomado agregado', detail: `${item.code} · ${item.label}`, date: 'Ahora' }, 'catálogo');
+  }
+
+  addPrice(item: PriceItem): void {
+    this.priceList.update((items) => [item, ...items]);
+    this.addAudit('398', { title: 'Precio agregado', detail: `${item.code} · ${item.price.toFixed(2)} MXN`, date: 'Ahora' }, 'catálogo');
+  }
+
+  addStatus(item: CatalogItem): void {
+    this.statuses.update((items) => [item, ...items]);
+    this.addAudit('398', { title: 'Estatus agregado', detail: `${item.code} · ${item.label}`, date: 'Ahora' }, 'catálogo');
+  }
+
+  addCancelReason(item: CatalogItem): void {
+    this.cancelReasons.update((items) => [item, ...items]);
+    this.addAudit('398', { title: 'Motivo agregado', detail: `${item.code} · ${item.label}`, date: 'Ahora' }, 'catálogo');
+  }
+
+  addMemberType(item: CatalogItem): void {
+    this.memberTypes.update((items) => [item, ...items]);
+    this.addAudit('398', { title: 'Tipo agregado', detail: `${item.code} · ${item.label}`, date: 'Ahora' }, 'catálogo');
   }
 }

@@ -50,6 +50,10 @@ export const routes: Routes = [
     loadComponent: async () => (await import('./pages/audit.page')).AuditPage,
   },
   {
+    path: 'catalogos',
+    loadComponent: async () => (await import('./pages/catalogs.page')).CatalogsPage,
+  },
+  {
     path: 'credenciales',
     loadComponent: async () => (await import('./pages/placeholder.page')).PlaceholderPage,
     data: placeholder('Credenciales', 'Administración de credenciales.'),

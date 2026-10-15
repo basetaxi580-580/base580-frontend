@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import { MemberStore } from '../data/member.store';
 
 @Component({
   standalone: true,
@@ -10,7 +11,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
     <section class="placeholder-page">
       <div class="placeholder-header">
         <div>
-          <p class="eyebrow">Sprint 1</p>
+          <p class="eyebrow">{{ eyebrow }}</p>
           <h2>{{ title }}</h2>
           <p>{{ description }}</p>
         </div>
@@ -102,7 +103,9 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 })
 export class PlaceholderPage {
   private readonly route = inject(ActivatedRoute);
+  private readonly store = inject(MemberStore);
 
   protected readonly title = this.route.snapshot.data['title'] ?? 'Pantalla';
   protected readonly description = this.route.snapshot.data['description'] ?? '';
+  protected readonly eyebrow = this.route.snapshot.routeConfig?.path === 'inicio' ? 'Sprint 1' : 'Configuración';
 }
