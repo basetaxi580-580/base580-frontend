@@ -35,13 +35,11 @@ export const routes: Routes = [
   },
   {
     path: 'reimpresion-ticket',
-    loadComponent: async () => (await import('./pages/placeholder.page')).PlaceholderPage,
-    data: placeholder('Reimpresión Ticket', 'Búsqueda y reimpresión por folio.'),
+    loadComponent: async () => (await import('./pages/reprint-ticket.page')).ReprintTicketPage,
   },
   {
     path: 'cancelacion',
-    loadComponent: async () => (await import('./pages/placeholder.page')).PlaceholderPage,
-    data: placeholder('Cancelación', 'Anulación con motivo y trazabilidad.'),
+    loadComponent: async () => (await import('./pages/cancel.page')).CancelPage,
   },
   {
     path: 'reportes',
