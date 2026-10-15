@@ -1,10 +1,152 @@
+<style>
+  :host {
+    display: block;
+  }
+
+  .layout-shell {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    min-height: 100vh;
+  }
+
+  .sidebar-backdrop {
+    display: none;
+  }
+
+  .brand-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .menu-toggle {
+    display: none;
+    border: 0;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #ec4899, #a855f7);
+    color: #fff;
+    font-weight: 800;
+    padding: 10px 12px;
+  }
+
+  .desktop-hide {
+    display: none;
+  }
+
+  .topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  @media (max-width: 900px) {
+    .layout-shell {
+      grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      z-index: 30;
+      width: min(88vw, 320px);
+      transform: translateX(-105%);
+      transition: transform 0.25s ease;
+    }
+
+    .sidebar.open {
+      transform: translateX(0);
+    }
+
+    .sidebar-backdrop {
+      display: block;
+      position: fixed;
+      inset: 0;
+      background: rgba(28, 18, 40, 0.45);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+      z-index: 20;
+    }
+
+    .sidebar-backdrop.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .menu-toggle {
+      display: inline-grid;
+      place-items: center;
+    }
+
+    .desktop-hide {
+      display: inline-grid;
+    }
+
+    .topbar {
+      padding: 18px 16px;
+    }
+
+    .workspace {
+      padding: 16px;
+    }
+
+    .topbar-actions {
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .hero-card,
+    .panel,
+    .router-card {
+      border-radius: 20px;
+    }
+
+    .hero-card {
+      padding: 18px;
+    }
+
+    .search-row,
+    .topbar {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .search-row button,
+    .search-row input,
+    .logout-button,
+    .date-pill {
+      width: 100%;
+    }
+
+    .quick-actions {
+      grid-template-columns: 1fr !important;
+    }
+  }
+
+  @media (max-width: 520px) {
+    .brand-subtitle,
+    .breadcrumb {
+      font-size: 0.82rem;
+    }
+
+    .hero-copy h1 {
+      font-size: 1.45rem;
+    }
+  }
+</style>
+
 <div class="layout-shell">
-  <aside class="sidebar">
-    <div class="brand">
-      <div class="brand-mark">B</div>
-      <div>
-        <div class="brand-title">Base580</div>
-        <div class="brand-subtitle">CRM moderno</div>
+  <div class="sidebar-backdrop" [class.visible]="isSidebarOpen" (click)="closeSidebar()"></div>
+
+  <aside class="sidebar" [class.open]="isSidebarOpen">
+    <div class="brand-row">
+      <button class="menu-toggle" type="button" (click)="toggleSidebar()">☰</button>
+      <div class="brand">
+        <div class="brand-mark">B</div>
+        <div>
+          <div class="brand-title">Base580</div>
+          <div class="brand-subtitle">CRM moderno</div>
+        </div>
       </div>
     </div>
 
@@ -14,6 +156,7 @@
         [routerLink]="item.path"
         routerLinkActive="active"
         class="nav-item"
+        (click)="closeSidebar()"
       >
         <span class="nav-icon">{{ item.icon }}</span>
         <span>{{ item.label }}</span>
@@ -28,9 +171,12 @@
 
   <div class="content">
     <header class="topbar">
-      <div>
-        <div class="welcome">Bienvenido(a): {{ userName }}</div>
-        <div class="breadcrumb">Sprint 10 · base580</div>
+      <div class="topbar-left">
+        <button class="menu-toggle desktop-hide" type="button" (click)="toggleSidebar()">☰</button>
+        <div>
+          <div class="welcome">Bienvenido(a): {{ userName }}</div>
+          <div class="breadcrumb">Sprint 10 · base580</div>
+        </div>
       </div>
 
       <div class="topbar-actions">
@@ -72,14 +218,14 @@
             <span>Frecuentes</span>
           </div>
           <div class="quick-actions">
-            <a routerLink="/socio/398">Ficha de socio</a>
-            <a routerLink="/captura/398">Captura</a>
-            <a routerLink="/boletos">Boletos</a>
-            <a routerLink="/operaciones">Operaciones</a>
-            <a routerLink="/reportes">Reportes</a>
-            <a routerLink="/catalogos">Catálogos</a>
-            <a routerLink="/buscar">Búsqueda rápida</a>
-            <a routerLink="/validacion">Validación final</a>
+            <a routerLink="/socio/398" (click)="closeSidebar()">Ficha de socio</a>
+            <a routerLink="/captura/398" (click)="closeSidebar()">Captura</a>
+            <a routerLink="/boletos" (click)="closeSidebar()">Boletos</a>
+            <a routerLink="/operaciones" (click)="closeSidebar()">Operaciones</a>
+            <a routerLink="/reportes" (click)="closeSidebar()">Reportes</a>
+            <a routerLink="/catalogos" (click)="closeSidebar()">Catálogos</a>
+            <a routerLink="/buscar" (click)="closeSidebar()">Búsqueda rápida</a>
+            <a routerLink="/validacion" (click)="closeSidebar()">Validación final</a>
           </div>
         </article>
 

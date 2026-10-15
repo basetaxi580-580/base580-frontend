@@ -23,6 +23,8 @@ export class App {
     year: 'numeric',
   }).format(new Date());
 
+  protected isSidebarOpen = false;
+
   protected readonly navItems: NavItem[] = [
     { label: 'Inicio', path: '/inicio', icon: '⌂' },
     { label: 'Captura', path: '/captura', icon: '⌁' },
@@ -42,9 +44,18 @@ export class App {
 
   constructor(private readonly router: Router) {}
 
+  protected toggleSidebar(): void {
+    this.isSidebarOpen = !this.isSidebarOpen;
+  }
+
+  protected closeSidebar(): void {
+    this.isSidebarOpen = false;
+  }
+
   protected submitSearch(query: string): void {
     const normalized = query.trim();
-    this.router.navigate(['/buscar'], {
+    this.closeSidebar();
+    void this.router.navigate(['/buscar'], {
       queryParams: normalized ? { q: normalized } : {},
     });
   }
