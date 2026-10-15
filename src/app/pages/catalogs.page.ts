@@ -266,6 +266,27 @@ type SectionKey = 'engomados' | 'precios' | 'estatus' | 'motivos' | 'tipos';
           flex-direction: column;
         }
       }
+
+      @media (max-width: 768px) {
+        .tabs,
+        .action-row,
+        .card-head,
+        .item-row {
+          flex-direction: column;
+        }
+
+        .tabs button,
+        .back-link,
+        .primary {
+          width: 100%;
+        }
+
+        .card,
+        .catalog-grid {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+      }
     `,
   ],
 })

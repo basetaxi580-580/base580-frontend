@@ -154,6 +154,20 @@ import { MemberStore } from '../data/member.store';
           flex-direction: column;
         }
       }
+
+      @media (max-width: 768px) {
+        .placeholder-header,
+        .result-summary,
+        .result-item {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .back-link {
+          width: 100%;
+          text-align: center;
+        }
+      }
     `,
   ],
 })

@@ -222,6 +222,34 @@ type CheckItem = {
           flex-direction: column;
         }
       }
+
+      @media (max-width: 768px) {
+        .page-header,
+        .card-head,
+        .flow-item {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .summary-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .back-link {
+          width: 100%;
+          text-align: center;
+        }
+      }
+
+      @media (max-width: 520px) {
+        .summary-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .card {
+          padding: 16px;
+        }
+      }
     `,
   ],
 })
