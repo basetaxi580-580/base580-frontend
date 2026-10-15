@@ -27,8 +27,11 @@ export const routes: Routes = [
   },
   {
     path: 'operaciones',
-    loadComponent: async () => (await import('./pages/placeholder.page')).PlaceholderPage,
-    data: placeholder('Operaciones', 'Flujos de ticketing y transacciones.'),
+    loadComponent: async () => (await import('./pages/operations.page')).OperationsPage,
+  },
+  {
+    path: 'operaciones/:id',
+    loadComponent: async () => (await import('./pages/operations.page')).OperationsPage,
   },
   {
     path: 'reimpresion-ticket',
