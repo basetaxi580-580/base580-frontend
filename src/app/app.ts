@@ -37,6 +37,7 @@ export class App {
     { label: 'Credenciales', path: '/credenciales', icon: '◉' },
     { label: 'Engomados', path: '/engomados', icon: '▣' },
     { label: 'Lista de precios', path: '/lista-precios', icon: '$' },
+    { label: 'Validación', path: '/validacion', icon: '✓' },
   ];
 
   constructor(private readonly router: Router) {}

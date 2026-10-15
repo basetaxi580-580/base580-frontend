@@ -74,6 +74,10 @@ export const routes: Routes = [
     data: placeholder('Búsqueda', 'Resultados de la búsqueda global.'),
   },
   {
+    path: 'validacion',
+    loadComponent: async () => (await import('./pages/validation.page')).ValidationPage,
+  },
+  {
     path: 'socio/:id',
     loadComponent: async () => (await import('./pages/member-profile.page')).MemberProfilePage,
   },
