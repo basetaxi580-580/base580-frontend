@@ -10,6 +10,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'Dockerfile'
+      - 'nginx.conf'
       - '.dockerignore'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
