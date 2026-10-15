@@ -1,0 +1,48 @@
+name: Deploy frontend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'angular.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: frontend-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy frontend on VM
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -e
+            cd ~/base580-frontend
+            git fetch origin main
+            git reset --hard origin/main
+            sudo docker build -t base580-frontend:latest .
+            sudo docker stop base580-frontend >/dev/null 2>&1 || true
+            sudo docker rm base580-frontend >/dev/null 2>&1 || true
+            sudo docker run -d \
+              --name base580-frontend \
+              --restart unless-stopped \
+              -p 80:80 \
+              base580-frontend:latest
+            curl -fsS http://localhost/
