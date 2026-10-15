@@ -43,8 +43,7 @@ export const routes: Routes = [
   },
   {
     path: 'reportes',
-    loadComponent: async () => (await import('./pages/placeholder.page')).PlaceholderPage,
-    data: placeholder('Reportes', 'Filtros, consulta y exportación PDF.'),
+    loadComponent: async () => (await import('./pages/reports.page')).ReportsPage,
   },
   {
     path: 'credenciales',
