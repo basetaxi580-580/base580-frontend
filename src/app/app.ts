@@ -33,6 +33,7 @@ export class App {
     { label: 'Reportes', path: '/reportes', icon: '▤' },
     { label: 'Auditoría', path: '/auditoria', icon: '☰' },
     { label: 'Catálogos', path: '/catalogos', icon: '⚙' },
+    { label: 'Búsqueda', path: '/buscar', icon: '⌕' },
     { label: 'Credenciales', path: '/credenciales', icon: '◉' },
     { label: 'Engomados', path: '/engomados', icon: '▣' },
     { label: 'Lista de precios', path: '/lista-precios', icon: '$' },

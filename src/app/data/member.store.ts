@@ -147,6 +147,22 @@ export class MemberStore {
     return this.members()[id];
   }
 
+  membersList(): MemberProfile[] {
+    return Object.values(this.members());
+  }
+
+  searchMembers(query: string): MemberProfile[] {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return this.membersList();
+
+    return this.membersList().filter((member) => {
+      return [member.id, member.name, member.memberType, member.employee, member.site, member.plate, member.sticker, member.status]
+        .join(' ')
+        .toLowerCase()
+        .includes(normalized);
+    });
+  }
+
   updateMember(id: string, patch: Partial<MemberProfile>): void {
     const current = this.members()[id];
     if (!current) return;
