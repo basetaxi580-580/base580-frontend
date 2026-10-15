@@ -88,7 +88,7 @@ type CheckItem = {
       .validation-page {
         display: grid;
         gap: 18px;
-        color: #e2e8f0;
+        color: #463255;
       }
 
       .page-header {
@@ -100,7 +100,7 @@ type CheckItem = {
 
       .eyebrow {
         margin: 0 0 8px;
-        color: #93c5fd;
+        color: #c02686;
         text-transform: uppercase;
         letter-spacing: 0.08em;
         font-size: 0.78rem;
@@ -115,7 +115,7 @@ type CheckItem = {
 
       .subtitle {
         margin-top: 8px;
-        color: #cbd5e1;
+        color: #7d6792;
       }
 
       .back-link,
@@ -127,13 +127,13 @@ type CheckItem = {
         text-decoration: none;
         font-weight: 700;
         padding: 10px 14px;
-        color: #dbeafe;
-        background: rgba(37, 99, 235, 0.18);
+        color: #7c3aed;
+        background: rgba(244, 114, 182, 0.14);
       }
 
       .card {
-        border: 1px solid rgba(148, 163, 184, 0.16);
-        background: rgba(30, 41, 59, 0.56);
+        border: 1px solid rgba(236, 72, 153, 0.12);
+        background: rgba(255, 255, 255, 0.72);
         padding: 18px;
       }
 
@@ -148,7 +148,7 @@ type CheckItem = {
       .summary-grid span,
       .flow-item p,
       .note-card p {
-        color: #94a3b8;
+        color: #8f7aa8;
       }
 
       .summary-grid {
@@ -160,13 +160,13 @@ type CheckItem = {
       .summary-grid div {
         padding: 12px 14px;
         border-radius: 14px;
-        background: rgba(15, 23, 42, 0.55);
+        background: rgba(248, 231, 244, 0.8);
         display: grid;
         gap: 4px;
       }
 
       .summary-grid strong {
-        color: #f8fafc;
+        color: #3a214e;
       }
 
       .flow-list {
@@ -182,8 +182,8 @@ type CheckItem = {
         color: inherit;
         padding: 14px;
         border-radius: 14px;
-        background: rgba(15, 23, 42, 0.55);
-        border: 1px solid rgba(148, 163, 184, 0.12);
+        background: rgba(248, 231, 244, 0.7);
+        border: 1px solid rgba(236, 72, 153, 0.12);
       }
 
       .flow-item span {
@@ -196,13 +196,13 @@ type CheckItem = {
       }
 
       .flow-item .ready {
-        color: #bbf7d0;
-        background: rgba(34, 197, 94, 0.16);
+        color: #8a1c5c;
+        background: rgba(236, 72, 153, 0.14);
       }
 
       .flow-item .pending {
-        color: #fde68a;
-        background: rgba(245, 158, 11, 0.16);
+        color: #7c3aed;
+        background: rgba(168, 85, 247, 0.14);
       }
 
       .note-card p {

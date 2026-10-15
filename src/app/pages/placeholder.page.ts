@@ -70,7 +70,7 @@ import { MemberStore } from '../data/member.store';
 
       .eyebrow {
         margin: 0 0 8px;
-        color: #93c5fd;
+        color: #c02686;
         text-transform: uppercase;
         letter-spacing: 0.08em;
         font-size: 0.78rem;
@@ -84,13 +84,13 @@ import { MemberStore } from '../data/member.store';
 
       p {
         margin: 8px 0 0;
-        color: #cbd5e1;
+        color: #7d6792;
       }
 
       .back-link {
-        color: #dbeafe;
+        color: #7c3aed;
         text-decoration: none;
-        background: rgba(37, 99, 235, 0.18);
+        background: rgba(244, 114, 182, 0.14);
         padding: 10px 14px;
         border-radius: 12px;
       }
@@ -105,9 +105,9 @@ import { MemberStore } from '../data/member.store';
       .result-summary,
       .result-item,
       .empty-search {
-        border: 1px solid rgba(148, 163, 184, 0.16);
+        border: 1px solid rgba(236, 72, 153, 0.12);
         border-radius: 18px;
-        background: rgba(30, 41, 59, 0.55);
+        background: rgba(255, 255, 255, 0.72);
         padding: 16px;
       }
 
@@ -123,7 +123,7 @@ import { MemberStore } from '../data/member.store';
 
       .result-summary strong {
         font-size: 2rem;
-        color: #f8fafc;
+        color: #3a214e;
       }
 
       .result-item {
@@ -135,12 +135,12 @@ import { MemberStore } from '../data/member.store';
       }
 
       .result-item span {
-        color: #93c5fd;
+        color: #c02686;
         align-self: center;
       }
 
       .empty-search {
-        color: #94a3b8;
+        color: #8f7aa8;
       }
 
       @media (max-width: 900px) {

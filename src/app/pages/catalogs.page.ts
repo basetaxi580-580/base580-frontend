@@ -102,7 +102,7 @@ type SectionKey = 'engomados' | 'precios' | 'estatus' | 'motivos' | 'tipos';
       .catalogs-page {
         display: grid;
         gap: 18px;
-        color: #e2e8f0;
+        color: #463255;
       }
 
       .page-header {
@@ -114,7 +114,7 @@ type SectionKey = 'engomados' | 'precios' | 'estatus' | 'motivos' | 'tipos';
 
       .eyebrow {
         margin: 0 0 8px;
-        color: #93c5fd;
+        color: #c02686;
         text-transform: uppercase;
         letter-spacing: 0.08em;
         font-size: 0.78rem;
@@ -129,7 +129,7 @@ type SectionKey = 'engomados' | 'precios' | 'estatus' | 'motivos' | 'tipos';
 
       .subtitle {
         margin-top: 8px;
-        color: #cbd5e1;
+        color: #7d6792;
       }
 
       .back-link,
@@ -143,8 +143,8 @@ type SectionKey = 'engomados' | 'precios' | 'estatus' | 'motivos' | 'tipos';
 
       .back-link {
         text-decoration: none;
-        color: #dbeafe;
-        background: rgba(37, 99, 235, 0.18);
+        color: #7c3aed;
+        background: rgba(244, 114, 182, 0.14);
       }
 
       .tabs {
@@ -154,19 +154,19 @@ type SectionKey = 'engomados' | 'precios' | 'estatus' | 'motivos' | 'tipos';
       }
 
       .tabs button {
-        background: rgba(37, 99, 235, 0.18);
-        color: #dbeafe;
+        background: rgba(244, 114, 182, 0.14);
+        color: #7c3aed;
       }
 
       .tabs button.active {
-        background: linear-gradient(135deg, #22c55e, #16a34a);
+        background: linear-gradient(135deg, #ec4899, #a855f7);
         color: white;
       }
 
       .card {
-        border: 1px solid rgba(148, 163, 184, 0.16);
+        border: 1px solid rgba(236, 72, 153, 0.12);
         border-radius: 20px;
-        background: rgba(30, 41, 59, 0.56);
+        background: rgba(255, 255, 255, 0.72);
         padding: 18px;
       }
 
@@ -181,7 +181,7 @@ type SectionKey = 'engomados' | 'precios' | 'estatus' | 'motivos' | 'tipos';
       .items-list p,
       .audit-item p,
       .audit-item small {
-        color: #94a3b8;
+        color: #8f7aa8;
       }
 
       .form-grid {
@@ -196,7 +196,7 @@ type SectionKey = 'engomados' | 'precios' | 'estatus' | 'motivos' | 'tipos';
       }
 
       label span {
-        color: #cbd5e1;
+        color: #7d6792;
         font-weight: 600;
       }
 
@@ -204,9 +204,9 @@ type SectionKey = 'engomados' | 'precios' | 'estatus' | 'motivos' | 'tipos';
       select {
         width: 100%;
         border-radius: 14px;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        background: rgba(15, 23, 42, 0.72);
-        color: #f8fafc;
+        border: 1px solid rgba(168, 85, 247, 0.18);
+        background: rgba(255, 255, 255, 0.9);
+        color: #3a214e;
         padding: 12px 14px;
         outline: none;
       }
@@ -219,8 +219,9 @@ type SectionKey = 'engomados' | 'precios' | 'estatus' | 'motivos' | 'tipos';
       }
 
       .primary {
-        background: linear-gradient(135deg, #22c55e, #16a34a);
+        background: linear-gradient(135deg, #ec4899, #a855f7);
         color: white;
+        box-shadow: 0 12px 24px rgba(236, 72, 153, 0.18);
       }
 
       .catalog-grid {
@@ -239,7 +240,7 @@ type SectionKey = 'engomados' | 'precios' | 'estatus' | 'motivos' | 'tipos';
       .audit-item {
         padding: 12px 14px;
         border-radius: 14px;
-        background: rgba(15, 23, 42, 0.55);
+        background: rgba(248, 231, 244, 0.72);
       }
 
       .item-row {

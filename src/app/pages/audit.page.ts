@@ -67,7 +67,7 @@ import { MemberStore } from '../data/member.store';
       .audit-page {
         display: grid;
         gap: 18px;
-        color: #e2e8f0;
+        color: #463255;
       }
 
       .page-header {
@@ -79,7 +79,7 @@ import { MemberStore } from '../data/member.store';
 
       .eyebrow {
         margin: 0 0 8px;
-        color: #93c5fd;
+        color: #c02686;
         text-transform: uppercase;
         letter-spacing: 0.08em;
         font-size: 0.78rem;
@@ -94,7 +94,7 @@ import { MemberStore } from '../data/member.store';
 
       .subtitle {
         margin-top: 8px;
-        color: #cbd5e1;
+        color: #7d6792;
       }
 
       .back-link,
@@ -106,13 +106,13 @@ import { MemberStore } from '../data/member.store';
         text-decoration: none;
         font-weight: 700;
         padding: 10px 14px;
-        color: #dbeafe;
-        background: rgba(37, 99, 235, 0.18);
+        color: #7c3aed;
+        background: rgba(244, 114, 182, 0.14);
       }
 
       .card {
-        border: 1px solid rgba(148, 163, 184, 0.16);
-        background: rgba(30, 41, 59, 0.56);
+        border: 1px solid rgba(236, 72, 153, 0.12);
+        background: rgba(255, 255, 255, 0.72);
         padding: 18px;
       }
 
@@ -127,7 +127,7 @@ import { MemberStore } from '../data/member.store';
       .summary-grid span,
       .timeline time,
       .timeline p {
-        color: #94a3b8;
+        color: #8f7aa8;
       }
 
       .summary-grid {
@@ -139,13 +139,13 @@ import { MemberStore } from '../data/member.store';
       .summary-grid div {
         padding: 12px 14px;
         border-radius: 14px;
-        background: rgba(15, 23, 42, 0.55);
+        background: rgba(248, 231, 244, 0.8);
         display: grid;
         gap: 4px;
       }
 
       .summary-grid strong {
-        color: #f8fafc;
+        color: #3a214e;
       }
 
       .timeline {
@@ -160,7 +160,7 @@ import { MemberStore } from '../data/member.store';
         align-items: start;
         padding: 12px 14px;
         border-radius: 14px;
-        background: rgba(15, 23, 42, 0.55);
+        background: rgba(248, 231, 244, 0.7);
       }
 
       .timeline-dot {
@@ -168,7 +168,7 @@ import { MemberStore } from '../data/member.store';
         height: 12px;
         border-radius: 50%;
         margin-top: 6px;
-        background: linear-gradient(135deg, #22c55e, #2563eb);
+        background: linear-gradient(135deg, #ec4899, #a855f7);
       }
 
       .timeline-dot.alt {
