@@ -1,18 +1,101 @@
-<main class="min-h-screen bg-slate-950 text-white flex items-center justify-center px-6">
-  <section class="w-full max-w-4xl text-center space-y-8">
-    <div class="inline-flex rounded-full border border-emerald-400/40 bg-emerald-400/10 px-4 py-1 text-sm text-emerald-300">
-      Hola mundo · Angular + Tailwind
+<div class="layout-shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">B</div>
+      <div>
+        <div class="brand-title">Base580</div>
+        <div class="brand-subtitle">CRM moderno</div>
+      </div>
     </div>
-    <h1 class="text-5xl font-black tracking-tight sm:text-6xl">
-      {{ title() }}
-    </h1>
-    <p class="mx-auto max-w-2xl text-lg text-slate-300">
-      Frontend independiente listo para conectarse con Spring Boot, MongoDB y Docker.
-    </p>
-    <div class="flex flex-wrap justify-center gap-3 text-sm">
-      <span class="rounded-full bg-slate-800 px-4 py-2">Angular</span>
-      <span class="rounded-full bg-slate-800 px-4 py-2">Tailwind CSS</span>
-      <span class="rounded-full bg-slate-800 px-4 py-2">GitHub Pages</span>
+
+    <nav class="nav">
+      <a
+        *ngFor="let item of navItems"
+        [routerLink]="item.path"
+        routerLinkActive="active"
+        class="nav-item"
+      >
+        <span class="nav-icon">{{ item.icon }}</span>
+        <span>{{ item.label }}</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <span class="status-dot"></span>
+      Operando en local
     </div>
-  </section>
-</main>
+  </aside>
+
+  <div class="content">
+    <header class="topbar">
+      <div>
+        <div class="welcome">Bienvenido(a): {{ userName() }}</div>
+        <div class="breadcrumb">Sprint 1 · base580</div>
+      </div>
+
+      <div class="topbar-actions">
+        <div class="date-pill">{{ currentDate() }}</div>
+        <button class="logout-button" type="button">Salir</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="hero-card">
+        <div class="hero-copy">
+          <span class="eyebrow">Sprint 1</span>
+          <h1>Interfaz moderna con navegación rápida</h1>
+          <p>
+            Base operativa para buscar, consultar y moverse entre módulos del CRM
+            sin perder tiempo.
+          </p>
+        </div>
+
+        <form class="search-card" (ngSubmit)="submitSearch(searchInput.value)">
+          <label for="global-search">Busca</label>
+          <div class="search-row">
+            <input
+              #searchInput
+              id="global-search"
+              name="global-search"
+              type="text"
+              placeholder="Nombre, ID, engomado, placas o folio"
+            />
+            <button type="submit">Buscar</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel-grid">
+        <article class="panel">
+          <div class="panel-header">
+            <h2>Accesos rápidos</h2>
+            <span>Frecuentes</span>
+          </div>
+          <div class="quick-actions">
+            <a routerLink="/captura">Captura</a>
+            <a routerLink="/boletos">Boletos</a>
+            <a routerLink="/operaciones">Operaciones</a>
+            <a routerLink="/reportes">Reportes</a>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h2>Estado del sistema</h2>
+            <span>Local</span>
+          </div>
+          <ul class="status-list">
+            <li><strong>Frontend:</strong> Angular moderno</li>
+            <li><strong>Backend:</strong> Spring Boot</li>
+            <li><strong>Base de datos:</strong> MongoDB</li>
+            <li><strong>Exportación:</strong> PDF para reportes</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="router-card">
+        <router-outlet></router-outlet>
+      </section>
+    </main>
+  </div>
+</div>
