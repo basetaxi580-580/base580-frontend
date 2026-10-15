@@ -26,6 +26,14 @@ export type MemberProfile = {
   notes: string;
 };
 
+export type AuditEvent = {
+  title: string;
+  detail: string;
+  date: string;
+};
+
+export type TimelineEntry = AuditEvent & { type: string };
+
 @Injectable({ providedIn: 'root' })
 export class MemberStore {
   private readonly members = signal<Record<string, MemberProfile>>({
@@ -66,6 +74,29 @@ export class MemberStore {
     },
   });
 
+  private readonly audit = signal<Record<string, TimelineEntry[]>>({
+    '398': [
+      {
+        type: 'socio',
+        title: 'Ficha cargada',
+        detail: 'Se abrió la información principal del socio desde la búsqueda global.',
+        date: 'Hoy',
+      },
+      {
+        type: 'socio',
+        title: 'Vigencia verificada',
+        detail: 'Se confirmó la fecha de vencimiento y la asignación actual de engomado.',
+        date: 'Reciente',
+      },
+      {
+        type: 'socio',
+        title: 'Sin movimientos pendientes',
+        detail: 'Los boletos y balances están en cero para este perfil.',
+        date: 'Histórico',
+      },
+    ],
+  });
+
   member(id: string): MemberProfile | undefined {
     return this.members()[id];
   }
@@ -83,9 +114,15 @@ export class MemberStore {
       ...store,
       [id]: updated,
     }));
+
+    this.addHistory(id, {
+      title: 'Ficha actualizada',
+      detail: 'Se actualizaron datos permitidos del socio desde captura.',
+      date: 'Ahora',
+    }, 'socio');
   }
 
-  addHistory(id: string, event: MemberHistoryEvent): void {
+  addHistory(id: string, event: MemberHistoryEvent, type = 'general'): void {
     const current = this.members()[id];
     if (!current) return;
 
@@ -96,5 +133,21 @@ export class MemberStore {
         history: [event, ...current.history].slice(0, 10),
       },
     }));
+
+    this.audit.update((store) => ({
+      ...store,
+      [id]: [{ type, ...event }, ...(store[id] ?? [])].slice(0, 20),
+    }));
+  }
+
+  addAudit(id: string, event: AuditEvent, type = 'general'): void {
+    this.audit.update((store) => ({
+      ...store,
+      [id]: [{ type, ...event }, ...(store[id] ?? [])].slice(0, 20),
+    }));
+  }
+
+  timeline(id: string): TimelineEntry[] {
+    return this.audit()[id] ?? [];
   }
 }

@@ -284,6 +284,11 @@ export class ReprintTicketPage {
       status: 'OK',
     };
     this.found = true;
+    this.store.addAudit(this.id, {
+      title: 'Ticket localizado',
+      detail: `Folio ${this.folio} preparado para reimpresión.`,
+      date: 'Ahora',
+    }, 'reimpresion');
     this.auditTrail = [
       {
         title: 'Ticket localizado',
@@ -296,6 +301,11 @@ export class ReprintTicketPage {
 
   protected print(): void {
     if (!this.found) this.search();
+    this.store.addAudit(this.id, {
+      title: 'Ticket reimpreso',
+      detail: `Se solicitó la reimpresión del folio ${this.ticket.folio}.`,
+      date: 'Ahora',
+    }, 'reimpresion');
     this.auditTrail = [
       {
         title: 'Ticket reimpreso',

@@ -270,11 +270,11 @@ export class CancelPage {
   protected cancel(): void {
     this.canceled = true;
     this.member = this.store.member(this.id) ?? this.store.member('398')!;
-    this.store.addHistory(this.id, {
+    this.store.addAudit(this.id, {
       title: 'Operación cancelada',
       detail: `Folio ${this.folio} anulado por ${this.reason}.`,
       date: 'Ahora',
-    });
+    }, 'cancelacion');
 
     this.auditTrail = [
       {
