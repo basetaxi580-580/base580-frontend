@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { BackendSyncService } from '../data/backend-api.service';
 import { MemberStore, CatalogItem, PriceItem } from '../data/member.store';
 
 type SectionKey = 'engomados' | 'precios' | 'estatus' | 'motivos' | 'tipos';
@@ -60,6 +61,7 @@ type SectionKey = 'engomados' | 'precios' | 'estatus' | 'motivos' | 'tipos';
 
         <div class="action-row">
           <button type="button" class="primary" (click)="addCurrent()">Agregar</button>
+          <button type="button" class="secondary" (click)="syncToBackend()">Guardar en Mongo</button>
         </div>
       </article>
 
@@ -134,7 +136,8 @@ type SectionKey = 'engomados' | 'precios' | 'estatus' | 'motivos' | 'tipos';
 
       .back-link,
       .tabs button,
-      .primary {
+      .primary,
+      .secondary {
         border-radius: 999px;
         padding: 10px 14px;
         font-weight: 700;
@@ -221,7 +224,16 @@ type SectionKey = 'engomados' | 'precios' | 'estatus' | 'motivos' | 'tipos';
       .primary {
         background: linear-gradient(135deg, #ec4899, #a855f7);
         color: white;
-        box-shadow: 0 12px 24px rgba(236, 72, 153, 0.18);
+      }
+
+      .secondary {
+        background: rgba(37, 99, 235, 0.18);
+        color: #dbeafe;
+      }
+
+      .secondary {
+        background: rgba(37, 99, 235, 0.18);
+        color: #dbeafe;
       }
 
       .catalog-grid {
@@ -292,6 +304,7 @@ type SectionKey = 'engomados' | 'precios' | 'estatus' | 'motivos' | 'tipos';
 })
 export class CatalogsPage {
   private readonly store = inject(MemberStore);
+  private readonly sync = inject(BackendSyncService);
 
   protected activeSection: SectionKey = 'engomados';
   protected form = { code: '', label: '', active: true };
@@ -362,4 +375,9 @@ export class CatalogsPage {
 
     this.form = { code: '', label: '', active: true };
   }
+
+  protected syncToBackend(): void {
+    void this.sync.saveToBackend();
+  }
 }
+

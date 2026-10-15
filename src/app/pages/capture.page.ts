@@ -1,7 +1,8 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import { BackendSyncService } from '../data/backend-api.service';
 import { MemberStore, MemberProfile } from '../data/member.store';
 
 @Component({
@@ -114,7 +115,7 @@ import { MemberStore, MemberProfile } from '../data/member.store';
       .capture-page {
         display: grid;
         gap: 18px;
-        color: #e2e8f0;
+        color: #463255;
       }
 
       .capture-header {
@@ -126,7 +127,7 @@ import { MemberStore, MemberProfile } from '../data/member.store';
 
       .eyebrow {
         margin: 0 0 8px;
-        color: #93c5fd;
+        color: #c02686;
         text-transform: uppercase;
         letter-spacing: 0.08em;
         font-size: 0.78rem;
@@ -142,7 +143,7 @@ import { MemberStore, MemberProfile } from '../data/member.store';
 
       .subtitle {
         margin-top: 8px;
-        color: #cbd5e1;
+        color: #7d6792;
       }
 
       .header-actions {
@@ -162,22 +163,22 @@ import { MemberStore, MemberProfile } from '../data/member.store';
 
       .status-pill {
         background: rgba(148, 163, 184, 0.16);
-        color: #e2e8f0;
+        color: #463255;
       }
 
       .status-pill.ok {
         background: rgba(34, 197, 94, 0.16);
-        color: #86efac;
+        color: #166534;
       }
 
       .status-pill.warn {
         background: rgba(245, 158, 11, 0.18);
-        color: #fde68a;
+        color: #a16207;
       }
 
       .status-pill.bad {
         background: rgba(239, 68, 68, 0.18);
-        color: #fecaca;
+        color: #b91c1c;
       }
 
       .back-link {
@@ -193,9 +194,9 @@ import { MemberStore, MemberProfile } from '../data/member.store';
       }
 
       .capture-card {
-        border: 1px solid rgba(148, 163, 184, 0.16);
+        border: 1px solid rgba(236, 72, 153, 0.12);
         border-radius: 20px;
-        background: rgba(30, 41, 59, 0.56);
+        background: rgba(255, 255, 255, 0.72);
         padding: 18px;
       }
 
@@ -210,7 +211,7 @@ import { MemberStore, MemberProfile } from '../data/member.store';
       .history-item small,
       .history-item p,
       .summary-list span {
-        color: #94a3b8;
+        color: #8f7aa8;
       }
 
       .form-grid {
@@ -226,7 +227,7 @@ import { MemberStore, MemberProfile } from '../data/member.store';
 
       label span {
         font-size: 0.92rem;
-        color: #cbd5e1;
+        color: #7d6792;
         font-weight: 600;
       }
 
@@ -235,9 +236,9 @@ import { MemberStore, MemberProfile } from '../data/member.store';
       textarea {
         width: 100%;
         border-radius: 14px;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        background: rgba(15, 23, 42, 0.72);
-        color: #f8fafc;
+        border: 1px solid rgba(168, 85, 247, 0.18);
+        background: rgba(255, 255, 255, 0.9);
+        color: #3a214e;
         padding: 12px 14px;
         outline: none;
       }
@@ -262,7 +263,7 @@ import { MemberStore, MemberProfile } from '../data/member.store';
       }
 
       .action-row .primary {
-        background: linear-gradient(135deg, #22c55e, #16a34a);
+        background: linear-gradient(135deg, #ec4899, #a855f7);
         color: white;
       }
 
@@ -287,7 +288,11 @@ import { MemberStore, MemberProfile } from '../data/member.store';
         gap: 12px;
         padding: 11px 12px;
         border-radius: 14px;
-        background: rgba(15, 23, 42, 0.55);
+        background: rgba(248, 231, 244, 0.8);
+      }
+
+      .summary-list strong {
+        color: #3a214e;
       }
 
       .mini-history {
@@ -298,7 +303,7 @@ import { MemberStore, MemberProfile } from '../data/member.store';
       .history-item {
         padding: 12px 14px;
         border-radius: 14px;
-        background: rgba(15, 23, 42, 0.55);
+        background: rgba(248, 231, 244, 0.72);
         display: grid;
         gap: 6px;
       }
@@ -313,12 +318,30 @@ import { MemberStore, MemberProfile } from '../data/member.store';
           flex-direction: column;
         }
       }
+
+      @media (max-width: 768px) {
+        .capture-header,
+        .card-head,
+        .header-actions,
+        .action-row {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .back-link,
+        .status-pill,
+        .action-row button {
+          width: 100%;
+          text-align: center;
+        }
+      }
     `,
   ],
 })
 export class CapturePage {
   private readonly route = inject(ActivatedRoute);
   private readonly store = inject(MemberStore);
+  private readonly sync = inject(BackendSyncService);
 
   private readonly memberId = this.route.snapshot.paramMap.get('id') ?? '398';
   private readonly original = this.store.member(this.memberId) ?? this.store.member('398')!;
@@ -332,6 +355,7 @@ export class CapturePage {
       detail: 'Se actualizó la ficha operativa del socio desde la pantalla de captura.',
       date: 'Ahora',
     });
+    void this.sync.saveToBackend();
   }
 
   protected reset(): void {

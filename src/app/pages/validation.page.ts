@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { BackendSyncService } from '../data/backend-api.service';
 import { MemberStore } from '../data/member.store';
 
 type CheckItem = {
@@ -80,6 +81,9 @@ type CheckItem = {
           La interfaz debe permitir que el operador encuentre un socio, abra su ficha, capture cambios,
           genere operación, cancele o reimprima sin perder historial ni contexto.
         </p>
+        <div class="note-actions">
+          <button type="button" class="primary" (click)="syncNow()">Sincronizar con Mongo</button>
+        </div>
       </article>
     </section>
   `,
@@ -209,6 +213,21 @@ type CheckItem = {
         line-height: 1.6;
       }
 
+      .note-actions {
+        margin-top: 14px;
+        display: flex;
+        gap: 10px;
+      }
+
+      .primary {
+        border: 0;
+        border-radius: 999px;
+        padding: 10px 14px;
+        font-weight: 700;
+        background: linear-gradient(135deg, #ec4899, #a855f7);
+        color: white;
+      }
+
       @media (max-width: 900px) {
         .page-header,
         .summary-grid,
@@ -255,6 +274,7 @@ type CheckItem = {
 })
 export class ValidationPage {
   private readonly store = inject(MemberStore);
+  private readonly sync = inject(BackendSyncService);
 
   protected readonly membersCount = this.store.membersList().length;
   protected readonly catalogCount =
@@ -321,5 +341,9 @@ export class ValidationPage {
 
   protected get pendingCount(): number {
     return this.checks.filter((item) => item.status === 'pendiente').length;
+  }
+
+  protected syncNow(): void {
+    void this.sync.saveToBackend();
   }
 }

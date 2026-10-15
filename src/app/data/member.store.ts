@@ -1,4 +1,5 @@
 import { Injectable, signal } from '@angular/core';
+import type { AppStateDto } from './backend-api.service';
 
 export type MemberHistoryEvent = {
   title: string;
@@ -212,6 +213,78 @@ export class MemberStore {
 
   timeline(id: string): TimelineEntry[] {
     return this.audit()[id] ?? [];
+  }
+
+  snapshot(): AppStateDto {
+    const member = this.membersList()[0] ?? this.members()["398"];
+    return {
+      id: 'default',
+      members: this.membersList().map((item) => ({
+        id: item.id,
+        name: item.name,
+        memberType: item.memberType,
+        employee: item.employee,
+        site: item.site,
+        plate: item.plate,
+        sticker: item.sticker,
+        expiry: item.expiry,
+        status: item.status,
+        dayTickets: item.dayTickets,
+        nightTickets: item.nightTickets,
+        totalTickets: item.totalTickets,
+        nightSaving: item.nightSaving,
+        personalSaving: item.personalSaving,
+        cardPayment: item.cardPayment,
+        notes: item.notes,
+        history: item.history.map((historyItem) => ({ ...historyItem })),
+      })),
+      catalogs: {
+        engomados: this.engomadoCatalog().map((item) => ({ ...item })),
+        priceList: this.priceCatalog().map((item) => ({ ...item })),
+        statuses: this.statusCatalog().map((item) => ({ ...item })),
+        cancelReasons: this.cancelReasonsCatalog().map((item) => ({ ...item })),
+        memberTypes: this.memberTypesCatalog().map((item) => ({ ...item })),
+      },
+      auditTrail: {
+        [member?.id ?? '398']: this.timeline(member?.id ?? '398').map((entry) => ({ ...entry })),
+      },
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  applyState(state: AppStateDto): void {
+    if (!state?.members?.length) return;
+
+    const first = state.members[0];
+    this.members.set({
+      [first.id]: {
+        id: first.id,
+        name: first.name,
+        memberType: first.memberType,
+        employee: first.employee,
+        site: first.site,
+        plate: first.plate,
+        sticker: first.sticker,
+        expiry: first.expiry,
+        status: first.status,
+        dayTickets: first.dayTickets,
+        nightTickets: first.nightTickets,
+        totalTickets: first.totalTickets,
+        nightSaving: first.nightSaving,
+        personalSaving: first.personalSaving,
+        cardPayment: first.cardPayment,
+        notes: first.notes,
+        history: first.history ?? [],
+      },
+    });
+
+    this.engomados.set(state.catalogs?.engomados ?? []);
+    this.priceList.set(state.catalogs?.priceList ?? []);
+    this.statuses.set(state.catalogs?.statuses ?? []);
+    this.cancelReasons.set(state.catalogs?.cancelReasons ?? []);
+    this.memberTypes.set(state.catalogs?.memberTypes ?? []);
+
+    this.audit.set(state.auditTrail ?? {});
   }
 
   engomadoCatalog(): CatalogItem[] {
