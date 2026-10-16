@@ -106,7 +106,7 @@ import { MemberStore } from '../data/member.store';
 
       .eyebrow {
         margin: 0 0 8px;
-        color: #93c5fd;
+        color: #c02686;
         text-transform: uppercase;
         letter-spacing: 0.08em;
         font-size: 0.78rem;
@@ -121,7 +121,7 @@ import { MemberStore } from '../data/member.store';
 
       .subtitle {
         margin-top: 8px;
-        color: #8b6f96;
+        color: #6b4f82;
       }
 
       .back-link,
@@ -134,8 +134,8 @@ import { MemberStore } from '../data/member.store';
 
       .back-link {
         text-decoration: none;
-        color: #dbeafe;
-        background: rgba(37, 99, 235, 0.18);
+        color: #7c3aed;
+        background: rgba(236, 72, 153, 0.08);
       }
 
       .card {
@@ -157,7 +157,7 @@ import { MemberStore } from '../data/member.store';
       .detail-list span,
       .audit-item p,
       .audit-item small {
-        color: #8b6f96;
+        color: #8d6fa8;
       }
 
       .cancel-grid {
@@ -179,7 +179,7 @@ import { MemberStore } from '../data/member.store';
       }
 
       label span {
-        color: #cbd5e1;
+        color: #7c3aed;
         font-weight: 600;
       }
 
@@ -203,8 +203,8 @@ import { MemberStore } from '../data/member.store';
       }
 
       .danger {
-        background: rgba(239, 68, 68, 0.22);
-        color: #fecaca;
+        background: linear-gradient(135deg, #ec4899, #a855f7);
+        color: white;
       }
 
       .detail-list div,
@@ -237,7 +237,7 @@ import { MemberStore } from '../data/member.store';
 
       .detail-list strong,
       .audit-item strong {
-        color: #3a214e;
+        color: #2f2240;
       }
 
       @media (max-width: 1100px) {
