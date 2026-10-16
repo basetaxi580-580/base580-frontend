@@ -216,7 +216,6 @@ export class MemberStore {
   }
 
   snapshot(): AppStateDto {
-    const member = this.membersList()[0] ?? this.members()["398"];
     return {
       id: 'default',
       members: this.membersList().map((item) => ({
@@ -245,38 +244,18 @@ export class MemberStore {
         cancelReasons: this.cancelReasonsCatalog().map((item) => ({ ...item })),
         memberTypes: this.memberTypesCatalog().map((item) => ({ ...item })),
       },
-      auditTrail: {
-        [member?.id ?? '398']: this.timeline(member?.id ?? '398').map((entry) => ({ ...entry })),
-      },
+      auditTrail: structuredClone(this.audit()),
       updatedAt: new Date().toISOString(),
     };
   }
 
   applyState(state: AppStateDto): void {
-    if (!state?.members?.length) return;
+    if (!state || !Array.isArray(state.members)) return;
 
-    const first = state.members[0];
-    this.members.set({
-      [first.id]: {
-        id: first.id,
-        name: first.name,
-        memberType: first.memberType,
-        employee: first.employee,
-        site: first.site,
-        plate: first.plate,
-        sticker: first.sticker,
-        expiry: first.expiry,
-        status: first.status,
-        dayTickets: first.dayTickets,
-        nightTickets: first.nightTickets,
-        totalTickets: first.totalTickets,
-        nightSaving: first.nightSaving,
-        personalSaving: first.personalSaving,
-        cardPayment: first.cardPayment,
-        notes: first.notes,
-        history: first.history ?? [],
-      },
-    });
+    this.members.set(Object.fromEntries(state.members.map((member) => [
+      member.id,
+      { ...structuredClone(member), history: structuredClone(member.history ?? []) },
+    ])));
 
     this.engomados.set(state.catalogs?.engomados ?? []);
     this.priceList.set(state.catalogs?.priceList ?? []);
@@ -284,7 +263,7 @@ export class MemberStore {
     this.cancelReasons.set(state.catalogs?.cancelReasons ?? []);
     this.memberTypes.set(state.catalogs?.memberTypes ?? []);
 
-    this.audit.set(state.auditTrail ?? {});
+    this.audit.set(structuredClone(state.auditTrail ?? {}));
   }
 
   engomadoCatalog(): CatalogItem[] {

@@ -1,10 +1,12 @@
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { App } from './app';
 
 describe('App', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [App],
+      providers: [provideRouter([])],
     })
       .compileComponents();
   });
@@ -15,10 +17,11 @@ describe('App', () => {
     expect(app).toBeTruthy();
   });
 
-  it('should render title', async () => {
+  it('should expose links to the operational modules', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('h1')?.textContent).toContain('Hello, base580-frontend');
+    expect(compiled.querySelector('a[href="/captura/398"]')).toBeTruthy();
+    expect(compiled.querySelector('a[href="/operaciones"]')).toBeTruthy();
   });
 });

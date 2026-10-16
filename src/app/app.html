@@ -20,7 +20,10 @@
   }
 
   .menu-toggle {
-    display: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
     border: 0;
     border-radius: 12px;
     background: linear-gradient(135deg, #ec4899, #a855f7);
@@ -135,12 +138,11 @@
   }
 </style>
 
-<div class="layout-shell">
+<div class="layout-shell" [class.sidebar-collapsed]="!isSidebarOpen" (touchstart)="startSidebarSwipe($event)" (touchend)="endSidebarSwipe($event)" (keydown.escape)="closeSidebar()">
   <div class="sidebar-backdrop" [class.visible]="isSidebarOpen" (click)="closeSidebar()"></div>
 
-  <aside class="sidebar" [class.open]="isSidebarOpen">
+  <aside id="module-navigation" class="sidebar" [class.open]="isSidebarOpen" [attr.inert]="isSidebarOpen ? null : ''" [attr.aria-hidden]="!isSidebarOpen">
     <div class="brand-row">
-      <button class="menu-toggle" type="button" (click)="toggleSidebar()">☰</button>
       <div class="brand">
         <div class="brand-mark">B</div>
         <div>
@@ -150,7 +152,7 @@
       </div>
     </div>
 
-    <nav class="nav">
+    <nav class="nav" aria-label="Módulos">
       <a
         *ngFor="let item of navItems"
         [routerLink]="item.path"
@@ -169,10 +171,17 @@
     </div>
   </aside>
 
+  <button class="sidebar-arrow" [class.is-closed]="!isSidebarOpen" type="button" (click)="toggleSidebar()" aria-controls="module-navigation" [attr.aria-expanded]="isSidebarOpen" [attr.aria-label]="isSidebarOpen ? 'Ocultar módulos' : 'Mostrar módulos'" [title]="isSidebarOpen ? 'Ocultar módulos' : 'Mostrar módulos'">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+  </button>
+
   <div class="content">
     <header class="topbar">
       <div class="topbar-left">
-        <button class="menu-toggle desktop-hide" type="button" (click)="toggleSidebar()">☰</button>
+        <button class="menu-toggle mobile-menu-toggle" type="button" (click)="toggleSidebar()" aria-controls="module-navigation" [attr.aria-expanded]="isSidebarOpen">
+          <span aria-hidden="true">☰</span>
+          Módulos
+        </button>
         <div>
           <div class="welcome">Bienvenido(a): {{ userName }}</div>
           <div class="breadcrumb">Sprint 10 · base580</div>

@@ -1,0 +1,22 @@
+---
+description: Shared Base580 Obsidian wiki in base580-infra — consult and update
+alwaysApply: true
+---
+
+# Base580 Obsidian Wiki
+
+Vault path: `C:\Users\carlo\Documents\base580\base580-infra`
+
+All AIs working on Base580 must use this shared vault (not a local copy in frontend).
+
+## Before answering project questions
+
+1. Read `../base580-infra/wiki/hot.md` (or absolute path above)
+2. If needed, read `../base580-infra/wiki/index.md`
+3. Then drill into specific pages
+
+## When you learn durable facts
+
+Write under `../base580-infra/wiki/`, then update `index.md`, overwrite `hot.md`, and prepend `log.md`.
+
+Never modify `../base580-infra/.raw/`. Schema: `../base580-infra/CLAUDE.md`.
