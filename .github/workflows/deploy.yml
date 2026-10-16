@@ -7,6 +7,8 @@ on:
     paths:
       - 'src/**'
       - 'angular.json'
+      - 'proxy.conf.json'
+      - 'tsconfig*.json'
       - 'package.json'
       - 'package-lock.json'
       - 'Dockerfile'
@@ -17,7 +19,7 @@ on:
 
 concurrency:
   group: frontend-deploy
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -39,12 +41,4 @@ jobs:
             cd ~/base580-frontend
             git fetch origin main
             git reset --hard origin/main
-            sudo docker build -t base580-frontend:latest .
-            sudo docker stop base580-frontend >/dev/null 2>&1 || true
-            sudo docker rm base580-frontend >/dev/null 2>&1 || true
-            sudo docker run -d \
-              --name base580-frontend \
-              --restart unless-stopped \
-              -p 80:80 \
-              base580-frontend:latest
-            curl -fsS http://localhost/
+            sudo bash "$HOME/base580-infra/scripts/deploy.sh" frontend "$PWD"

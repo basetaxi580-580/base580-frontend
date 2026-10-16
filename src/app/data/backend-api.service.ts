@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../environments/environment';
-import { MemberStore, MemberProfile, CatalogItem, PriceItem } from '../data/member.store';
+import { MemberStore, CatalogItem, PriceItem } from './member.store';
 
 export type MemberHistoryEntry = {
   title: string;
@@ -80,26 +80,6 @@ export class BackendSyncService {
   }
 
   syncLocalState(state: AppStateDto): void {
-    if (!state?.members?.length) return;
-
-    const member = state.members[0];
-    this.store.updateMember(member.id, {
-      name: member.name,
-      memberType: member.memberType,
-      employee: member.employee,
-      site: member.site,
-      plate: member.plate,
-      sticker: member.sticker,
-      expiry: member.expiry,
-      status: member.status,
-      dayTickets: member.dayTickets,
-      nightTickets: member.nightTickets,
-      totalTickets: member.totalTickets,
-      nightSaving: member.nightSaving,
-      personalSaving: member.personalSaving,
-      cardPayment: member.cardPayment,
-      notes: member.notes,
-      history: member.history ?? [],
-    } as Partial<MemberProfile>);
+    this.store.applyState(state);
   }
 }

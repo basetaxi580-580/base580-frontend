@@ -358,7 +358,7 @@ export class ReportsPage {
       comision: 0,
       pagoTarjeta: 1423.8,
       formaPago: 'Tarjeta',
-      usuario: 'Gonzalo Carreto Perez',
+      usuario: 'Miguel Rios Bravo',
     },
     {
       no: 2,
@@ -375,7 +375,7 @@ export class ReportsPage {
       comision: 0,
       pagoTarjeta: 1161,
       formaPago: 'Efectivo',
-      usuario: 'Gonzalo Carreto Perez',
+      usuario: 'Miguel Rios Bravo',
     },
     {
       no: 3,
@@ -392,7 +392,7 @@ export class ReportsPage {
       comision: 0,
       pagoTarjeta: 1291.5,
       formaPago: 'Tarjeta',
-      usuario: 'Gonzalo Carreto Perez',
+      usuario: 'Miguel Rios Bravo',
     },
     {
       no: 4,
@@ -409,7 +409,7 @@ export class ReportsPage {
       comision: 0,
       pagoTarjeta: 1033.2,
       formaPago: 'Tarjeta',
-      usuario: 'Gonzalo Carreto Perez',
+      usuario: 'Miguel Rios Bravo',
     },
   ];
 
