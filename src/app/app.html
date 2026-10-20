@@ -180,7 +180,7 @@
         </button>
         <div>
           <div class="welcome">Bienvenido(a): {{ userName }}</div>
-          <div class="breadcrumb">Sprint 10 · base580</div>
+          <div class="breadcrumb">base580</div>
         </div>
       </div>
 
@@ -191,46 +191,6 @@
     </header>
 
     <main class="workspace">
-      <section class="hero-card">
-        <div class="hero-copy">
-          <span class="eyebrow">Sprint 10</span>
-          <h1>Catálogos y configuración base</h1>
-          <p>
-            Administración de datos de soporte para engomados, tarifas, estatus y
-            motivos sin perder el flujo operativo.
-          </p>
-        </div>
-
-        <form class="search-card" (ngSubmit)="submitSearch(searchInput.value)">
-          <label for="global-search">Busca</label>
-          <div class="search-row">
-            <input
-              #searchInput
-              id="global-search"
-              name="global-search"
-              type="text"
-              placeholder="Nombre, ID, engomado, placas o folio"
-            />
-            <button type="submit">Buscar</button>
-          </div>
-        </form>
-      </section>
-
-      <section class="panel-grid">
-        <article class="panel">
-          <div class="panel-header">
-            <h2>Estado del sistema</h2>
-            <span>Local</span>
-          </div>
-          <ul class="status-list">
-            <li><strong>Frontend:</strong> Angular moderno</li>
-            <li><strong>Backend:</strong> Spring Boot</li>
-            <li><strong>Base de datos:</strong> MongoDB</li>
-            <li><strong>Exportación:</strong> PDF para reportes</li>
-          </ul>
-        </article>
-      </section>
-
       <section class="router-card">
         <router-outlet></router-outlet>
       </section>
