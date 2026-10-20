@@ -19,7 +19,6 @@ type CheckItem = {
     <section class="validation-page">
       <div class="page-header">
         <div>
-          <p class="eyebrow">Sprint 10</p>
           <h2>Validación de flujos críticos</h2>
           <p class="subtitle">
             Revisión final de las rutas clave para entrar a producción local sin perder trazabilidad.
@@ -100,15 +99,6 @@ type CheckItem = {
         justify-content: space-between;
         gap: 16px;
         align-items: start;
-      }
-
-      .eyebrow {
-        margin: 0 0 8px;
-        color: #c02686;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-size: 0.78rem;
-        font-weight: 700;
       }
 
       h2,

@@ -15,7 +15,6 @@ type SectionKey = 'engomados' | 'precios' | 'estatus' | 'motivos' | 'tipos';
     <section class="catalogs-page">
       <div class="page-header">
         <div>
-          <p class="eyebrow">Catálogos y configuración</p>
           <h2>Administrar datos base del sistema</h2>
           <p class="subtitle">Engomados, tarifas, estatus, motivos y tipos de socio.</p>
         </div>
@@ -112,15 +111,6 @@ type SectionKey = 'engomados' | 'precios' | 'estatus' | 'motivos' | 'tipos';
         justify-content: space-between;
         gap: 16px;
         align-items: start;
-      }
-
-      .eyebrow {
-        margin: 0 0 8px;
-        color: #c02686;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-size: 0.78rem;
-        font-weight: 700;
       }
 
       h2,
