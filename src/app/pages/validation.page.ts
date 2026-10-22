@@ -19,7 +19,6 @@ type CheckItem = {
     <section class="validation-page">
       <div class="page-header">
         <div>
-          <p class="eyebrow">Sprint 10</p>
           <h2>Validación de flujos críticos</h2>
           <p class="subtitle">
             Revisión final de las rutas clave para entrar a producción local sin perder trazabilidad.

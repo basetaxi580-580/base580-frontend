@@ -21,7 +21,9 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('a[href="/captura/398"]')).toBeTruthy();
+    expect(compiled.querySelector('a[href="/captura"]')).toBeTruthy();
     expect(compiled.querySelector('a[href="/operaciones"]')).toBeTruthy();
+    expect(compiled.textContent).not.toContain('Accesos rápidos');
+    expect(compiled.textContent).not.toContain('Estado del sistema');
   });
 });

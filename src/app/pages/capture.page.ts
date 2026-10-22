@@ -1,113 +1,68 @@
 import { CommonModule } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute } from '@angular/router';
 import { BackendSyncService } from '../data/backend-api.service';
 import { MemberStore, MemberProfile } from '../data/member.store';
 
 @Component({
   standalone: true,
   selector: 'app-capture-page',
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule],
   template: `
     <section class="capture-page">
       <div class="capture-header">
         <div>
-          <p class="eyebrow">Captura y edición operativa</p>
+          <p class="eyebrow">Captura</p>
           <h2>{{ model.name }}</h2>
-          <p class="subtitle">ID {{ model.id }} · {{ model.memberType }}</p>
-        </div>
-
-        <div class="header-actions">
-          <span class="status-pill" [class.ok]="model.status === 'OK'" [class.warn]="model.status === 'PENDIENTE'" [class.bad]="model.status === 'INACTIVO'">
-            {{ model.status }}
-          </span>
-          <a routerLink="/socio/{{ model.id }}" class="back-link">Ver ficha</a>
+          <p class="subtitle">ID {{ model.id }}</p>
         </div>
       </div>
 
-      <div class="capture-grid">
-        <article class="capture-card form-card">
-          <div class="card-head">
-            <h3>Datos editables</h3>
-            <span>Guardar y dejar historial</span>
-          </div>
+      <article class="capture-card">
+        <div class="card-head">
+          <h3>Datos operativos</h3>
+          <span>Sitio, placas, engomado y vigencia</span>
+        </div>
 
-          <div class="form-grid">
-            <label>
-              <span>Nombre</span>
-              <input [(ngModel)]="model.name" name="name" type="text" />
-            </label>
-            <label>
-              <span>Tipo de socio</span>
-              <input [(ngModel)]="model.memberType" name="memberType" type="text" />
-            </label>
-            <label>
-              <span>Empleado</span>
-              <input [(ngModel)]="model.employee" name="employee" type="text" />
-            </label>
-            <label>
-              <span>Sitio</span>
-              <input [(ngModel)]="model.site" name="site" type="text" />
-            </label>
-            <label>
-              <span>Placas</span>
-              <input [(ngModel)]="model.plate" name="plate" type="text" />
-            </label>
-            <label>
-              <span>Engomado</span>
-              <input [(ngModel)]="model.sticker" name="sticker" type="text" />
-            </label>
-            <label>
-              <span>Fecha de vencimiento</span>
-              <input [(ngModel)]="model.expiry" name="expiry" type="text" />
-            </label>
-            <label>
-              <span>Estatus</span>
-              <select [(ngModel)]="model.status" name="status">
-                <option value="OK">OK</option>
-                <option value="PENDIENTE">PENDIENTE</option>
-                <option value="INACTIVO">INACTIVO</option>
-              </select>
-            </label>
-          </div>
-
-          <label class="notes-field">
-            <span>Observaciones</span>
-            <textarea [(ngModel)]="model.notes" name="notes" rows="4"></textarea>
+        <div class="form-grid">
+          <label>
+            <span>Sitio</span>
+            <input [(ngModel)]="model.site" name="site" type="text" />
           </label>
+          <label>
+            <span>Placas</span>
+            <input [(ngModel)]="model.plate" name="plate" type="text" />
+          </label>
+          <label>
+            <span>Engomado</span>
+            <input [(ngModel)]="model.sticker" name="sticker" type="text" />
+          </label>
+          <label>
+            <span>Fecha de vencimiento</span>
+            <input [(ngModel)]="model.expiry" name="expiry" type="text" />
+          </label>
+          <label>
+            <span>Estatus</span>
+            <select [(ngModel)]="model.status" name="status">
+              <option value="OK">OK</option>
+              <option value="PENDIENTE">PENDIENTE</option>
+              <option value="INACTIVO">INACTIVO</option>
+            </select>
+          </label>
+        </div>
 
-          <div class="action-row">
-            <button type="button" class="primary" (click)="save()">Guardar cambios</button>
-            <button type="button" class="secondary" (click)="reset()">Restaurar</button>
-          </div>
-        </article>
+        <label class="notes-field">
+          <span>Observaciones</span>
+          <textarea [(ngModel)]="model.notes" name="notes" rows="4"></textarea>
+        </label>
 
-        <article class="capture-card summary-card">
-          <div class="card-head">
-            <h3>Resumen operativo</h3>
-            <span>Lectura rápida</span>
-          </div>
-
-          <div class="summary-list">
-            <div><span>ID</span><strong>{{ model.id }}</strong></div>
-            <div><span>Nombre</span><strong>{{ model.name }}</strong></div>
-            <div><span>Placas</span><strong>{{ model.plate }}</strong></div>
-            <div><span>Engomado</span><strong>{{ model.sticker }}</strong></div>
-            <div><span>Sitio</span><strong>{{ model.site }}</strong></div>
-            <div><span>Vencimiento</span><strong>{{ model.expiry }}</strong></div>
-          </div>
-
-          <div class="mini-history">
-            <h4>Últimos cambios</h4>
-            <div *ngFor="let item of model.history" class="history-item">
-              <strong>{{ item.title }}</strong>
-              <p>{{ item.detail }}</p>
-              <small>{{ item.date }}</small>
-            </div>
-          </div>
-        </article>
-      </div>
+        <div class="action-row">
+          <button type="button" class="primary" (click)="save()">Guardar cambios</button>
+          <button type="button" class="secondary" (click)="reset()">Restaurar</button>
+        </div>
+        <p class="save-note" *ngIf="saved">Cambios guardados.</p>
+      </article>
     </section>
   `,
   styles: [
@@ -115,14 +70,8 @@ import { MemberStore, MemberProfile } from '../data/member.store';
       .capture-page {
         display: grid;
         gap: 18px;
+        max-width: 760px;
         color: #463255;
-      }
-
-      .capture-header {
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        align-items: start;
       }
 
       .eyebrow {
@@ -136,7 +85,6 @@ import { MemberStore, MemberProfile } from '../data/member.store';
 
       h2,
       h3,
-      h4,
       p {
         margin: 0;
       }
@@ -144,53 +92,6 @@ import { MemberStore, MemberProfile } from '../data/member.store';
       .subtitle {
         margin-top: 8px;
         color: #7d6792;
-      }
-
-      .header-actions {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-
-      .status-pill,
-      .back-link,
-      .action-row button {
-        border-radius: 999px;
-        padding: 10px 14px;
-        font-weight: 700;
-      }
-
-      .status-pill {
-        background: rgba(148, 163, 184, 0.16);
-        color: #463255;
-      }
-
-      .status-pill.ok {
-        background: rgba(34, 197, 94, 0.16);
-        color: #166534;
-      }
-
-      .status-pill.warn {
-        background: rgba(245, 158, 11, 0.18);
-        color: #a16207;
-      }
-
-      .status-pill.bad {
-        background: rgba(239, 68, 68, 0.18);
-        color: #b91c1c;
-      }
-
-      .back-link {
-        text-decoration: none;
-        background: rgba(37, 99, 235, 0.18);
-        color: #dbeafe;
-      }
-
-      .capture-grid {
-        display: grid;
-        grid-template-columns: 1.2fr 0.8fr;
-        gap: 16px;
       }
 
       .capture-card {
@@ -207,10 +108,7 @@ import { MemberStore, MemberProfile } from '../data/member.store';
         margin-bottom: 16px;
       }
 
-      .card-head span,
-      .history-item small,
-      .history-item p,
-      .summary-list span {
+      .card-head span {
         color: #8f7aa8;
       }
 
@@ -260,6 +158,9 @@ import { MemberStore, MemberProfile } from '../data/member.store';
 
       .action-row button {
         border: 0;
+        border-radius: 999px;
+        padding: 10px 14px;
+        font-weight: 700;
       }
 
       .action-row .primary {
@@ -269,70 +170,28 @@ import { MemberStore, MemberProfile } from '../data/member.store';
 
       .action-row .secondary {
         background: rgba(37, 99, 235, 0.18);
-        color: #dbeafe;
+        color: #1d4ed8;
       }
 
-      .summary-card {
-        display: grid;
-        gap: 14px;
-      }
-
-      .summary-list {
-        display: grid;
-        gap: 10px;
-      }
-
-      .summary-list div {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        padding: 11px 12px;
-        border-radius: 14px;
-        background: rgba(248, 231, 244, 0.8);
-      }
-
-      .summary-list strong {
-        color: #3a214e;
-      }
-
-      .mini-history {
-        display: grid;
-        gap: 12px;
-      }
-
-      .history-item {
-        padding: 12px 14px;
-        border-radius: 14px;
-        background: rgba(248, 231, 244, 0.72);
-        display: grid;
-        gap: 6px;
-      }
-
-      @media (max-width: 1100px) {
-        .capture-grid,
-        .form-grid {
-          grid-template-columns: 1fr;
-        }
-
-        .capture-header {
-          flex-direction: column;
-        }
+      .save-note {
+        margin-top: 12px;
+        color: #166534;
+        font-weight: 600;
       }
 
       @media (max-width: 768px) {
-        .capture-header,
         .card-head,
-        .header-actions,
         .action-row {
           flex-direction: column;
           align-items: stretch;
         }
 
-        .back-link,
-        .status-pill,
+        .form-grid {
+          grid-template-columns: 1fr;
+        }
+
         .action-row button {
           width: 100%;
-          text-align: center;
         }
       }
     `,
@@ -344,21 +203,29 @@ export class CapturePage {
   private readonly sync = inject(BackendSyncService);
 
   private readonly memberId = this.route.snapshot.paramMap.get('id') ?? '398';
-  private readonly original = this.store.member(this.memberId) ?? this.store.member('398')!;
+  private baseline = structuredClone(this.store.member(this.memberId) ?? this.store.member('398')!);
 
-  protected model: MemberProfile = structuredClone(this.original);
+  protected model: MemberProfile = structuredClone(this.baseline);
+  protected saved = false;
 
   protected save(): void {
-    this.store.updateMember(this.memberId, structuredClone(this.model));
-    this.store.addHistory(this.memberId, {
-      title: 'Cambios guardados',
-      detail: 'Se actualizó la ficha operativa del socio desde la pantalla de captura.',
-      date: 'Ahora',
+    this.store.updateMember(this.memberId, {
+      site: this.model.site,
+      plate: this.model.plate,
+      sticker: this.model.sticker,
+      expiry: this.model.expiry,
+      status: this.model.status,
+      notes: this.model.notes,
     });
+    const stored = this.store.member(this.memberId);
+    this.baseline = structuredClone(stored ?? this.model);
+    this.model = structuredClone(this.baseline);
     void this.sync.saveToBackend();
+    this.saved = true;
   }
 
   protected reset(): void {
-    this.model = structuredClone(this.original);
+    this.model = structuredClone(this.baseline);
+    this.saved = false;
   }
 }
