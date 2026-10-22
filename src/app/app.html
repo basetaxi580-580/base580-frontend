@@ -99,7 +99,6 @@
     }
 
     .hero-card,
-    .panel,
     .router-card {
       border-radius: 20px;
     }
@@ -121,9 +120,6 @@
       width: 100%;
     }
 
-    .quick-actions {
-      grid-template-columns: 1fr !important;
-    }
   }
 
   @media (max-width: 520px) {
@@ -178,10 +174,7 @@
           <span aria-hidden="true">☰</span>
           Módulos
         </button>
-        <div>
-          <div class="welcome">Bienvenido(a): {{ userName }}</div>
-          <div class="breadcrumb">base580</div>
-        </div>
+        <div class="welcome">Bienvenido(a): {{ userName }}</div>
       </div>
 
       <div class="topbar-actions">
@@ -191,6 +184,22 @@
     </header>
 
     <main class="workspace">
+      <section class="hero-card" aria-label="Búsqueda">
+        <form class="search-card" (ngSubmit)="submitSearch(searchInput.value)">
+          <label class="search-label" for="global-search">Busca</label>
+          <div class="search-row">
+            <input
+              #searchInput
+              id="global-search"
+              name="global-search"
+              type="search"
+              placeholder="Nombre, ID, engomado, placas o folio"
+            />
+            <button type="submit">Buscar</button>
+          </div>
+        </form>
+      </section>
+
       <section class="router-card">
         <router-outlet></router-outlet>
       </section>

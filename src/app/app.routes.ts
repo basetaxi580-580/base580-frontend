@@ -22,8 +22,7 @@ export const routes: Routes = [
   },
   {
     path: 'boletos',
-    loadComponent: async () => (await import('./pages/placeholder.page')).PlaceholderPage,
-    data: placeholder('Boletos', 'Gestión de boletos y movimientos.'),
+    loadComponent: async () => (await import('./pages/boletos.page')).BoletosPage,
   },
   {
     path: 'operaciones',
@@ -65,8 +64,7 @@ export const routes: Routes = [
   },
   {
     path: 'lista-precios',
-    loadComponent: async () => (await import('./pages/placeholder.page')).PlaceholderPage,
-    data: placeholder('Lista de precios', 'Catálogo de tarifas y precios.'),
+    loadComponent: async () => (await import('./pages/boletos.page')).BoletosPage,
   },
   {
     path: 'buscar',

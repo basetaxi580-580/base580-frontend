@@ -11,7 +11,7 @@ import { MemberStore } from '../data/member.store';
     <section class="placeholder-page">
       <div class="placeholder-header">
         <div>
-          <p class="eyebrow">{{ eyebrow }}</p>
+          <p class="eyebrow" *ngIf="eyebrow">{{ eyebrow }}</p>
           <h2>{{ title }}</h2>
           <p>{{ description }}</p>
         </div>
@@ -177,7 +177,7 @@ export class PlaceholderPage {
 
   protected readonly title = this.route.snapshot.data['title'] ?? 'Pantalla';
   protected readonly description = this.route.snapshot.data['description'] ?? '';
-  protected readonly eyebrow = this.route.snapshot.routeConfig?.path === 'inicio' ? 'Sprint 1' : 'Configuración';
+  protected readonly eyebrow = this.route.snapshot.routeConfig?.path === 'inicio' ? '' : 'Configuración';
   protected readonly mode = this.route.snapshot.routeConfig?.path === 'buscar' ? 'search' : 'default';
   protected readonly query = this.route.snapshot.queryParamMap.get('q') ?? '';
   protected readonly results = this.store.searchMembers(this.query);
