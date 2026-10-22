@@ -101,15 +101,6 @@ type CheckItem = {
         align-items: start;
       }
 
-      .eyebrow {
-        margin: 0 0 8px;
-        color: #c02686;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-size: 0.78rem;
-        font-weight: 700;
-      }
-
       h2,
       h3,
       p {

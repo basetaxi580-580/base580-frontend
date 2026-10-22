@@ -94,7 +94,7 @@ import { MemberStore } from '../data/member.store';
       .cancel-page {
         display: grid;
         gap: 18px;
-        color: #e2e8f0;
+        color: #43324f;
       }
 
       .page-header {
@@ -106,7 +106,7 @@ import { MemberStore } from '../data/member.store';
 
       .eyebrow {
         margin: 0 0 8px;
-        color: #93c5fd;
+        color: #c02686;
         text-transform: uppercase;
         letter-spacing: 0.08em;
         font-size: 0.78rem;
@@ -121,7 +121,7 @@ import { MemberStore } from '../data/member.store';
 
       .subtitle {
         margin-top: 8px;
-        color: #cbd5e1;
+        color: #6b4f82;
       }
 
       .back-link,
@@ -134,15 +134,16 @@ import { MemberStore } from '../data/member.store';
 
       .back-link {
         text-decoration: none;
-        color: #dbeafe;
-        background: rgba(37, 99, 235, 0.18);
+        color: #7c3aed;
+        background: rgba(236, 72, 153, 0.08);
       }
 
       .card {
-        border: 1px solid rgba(148, 163, 184, 0.16);
+        border: 1px solid rgba(236, 72, 153, 0.12);
         border-radius: 20px;
-        background: rgba(30, 41, 59, 0.56);
+        background: rgba(255, 255, 255, 0.88);
         padding: 18px;
+        box-shadow: 0 14px 30px rgba(176, 89, 152, 0.08);
       }
 
       .card-head {
@@ -156,7 +157,7 @@ import { MemberStore } from '../data/member.store';
       .detail-list span,
       .audit-item p,
       .audit-item small {
-        color: #94a3b8;
+        color: #8d6fa8;
       }
 
       .cancel-grid {
@@ -178,7 +179,7 @@ import { MemberStore } from '../data/member.store';
       }
 
       label span {
-        color: #cbd5e1;
+        color: #7c3aed;
         font-weight: 600;
       }
 
@@ -187,9 +188,9 @@ import { MemberStore } from '../data/member.store';
       textarea {
         width: 100%;
         border-radius: 14px;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        background: rgba(15, 23, 42, 0.72);
-        color: #f8fafc;
+        border: 1px solid rgba(216, 180, 208, 0.8);
+        background: #fff;
+        color: #3a214e;
         padding: 12px 14px;
         outline: none;
       }
@@ -202,15 +203,16 @@ import { MemberStore } from '../data/member.store';
       }
 
       .danger {
-        background: rgba(239, 68, 68, 0.22);
-        color: #fecaca;
+        background: linear-gradient(135deg, #ec4899, #a855f7);
+        color: white;
       }
 
       .detail-list div,
       .audit-item {
         padding: 12px 14px;
         border-radius: 14px;
-        background: rgba(15, 23, 42, 0.55);
+        background: #fff7fb;
+        border: 1px solid rgba(236, 72, 153, 0.1);
       }
 
       .detail-list div {
@@ -231,6 +233,11 @@ import { MemberStore } from '../data/member.store';
 
       .notes-field {
         margin-top: 14px;
+      }
+
+      .detail-list strong,
+      .audit-item strong {
+        color: #2f2240;
       }
 
       @media (max-width: 1100px) {

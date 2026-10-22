@@ -186,7 +186,7 @@ type OperationLine = {
       .operations-page {
         display: grid;
         gap: 18px;
-        color: #e2e8f0;
+        color: #43324f;
       }
 
       .operations-header {
@@ -213,7 +213,7 @@ type OperationLine = {
 
       .subtitle {
         margin-top: 8px;
-        color: #cbd5e1;
+        color: #8b6f96;
       }
 
       .header-actions {
@@ -235,13 +235,13 @@ type OperationLine = {
 
       .back-link {
         text-decoration: none;
-        color: #dbeafe;
-        background: rgba(37, 99, 235, 0.18);
+        color: #7c3aed;
+        background: rgba(236, 72, 153, 0.08);
       }
 
       .folio-pill {
-        background: rgba(245, 158, 11, 0.16);
-        color: #fde68a;
+        background: rgba(236, 72, 153, 0.08);
+        color: #a21caf;
       }
 
       .operations-grid {
@@ -251,10 +251,11 @@ type OperationLine = {
       }
 
       .operations-card {
-        border: 1px solid rgba(148, 163, 184, 0.16);
+        border: 1px solid rgba(236, 72, 153, 0.12);
         border-radius: 20px;
-        background: rgba(30, 41, 59, 0.56);
+        background: rgba(255, 255, 255, 0.88);
         padding: 18px;
+        box-shadow: 0 14px 30px rgba(176, 89, 152, 0.08);
       }
 
       .card-head {
@@ -270,7 +271,7 @@ type OperationLine = {
       .audit-item p,
       .audit-item small,
       .empty-state {
-        color: #94a3b8;
+        color: #8b6f96;
       }
 
       .member-summary,
@@ -287,7 +288,8 @@ type OperationLine = {
         gap: 12px;
         padding: 12px 14px;
         border-radius: 14px;
-        background: rgba(15, 23, 42, 0.55);
+        background: #fff7fb;
+        border: 1px solid rgba(236, 72, 153, 0.1);
       }
 
       .member-stats {
@@ -315,9 +317,9 @@ type OperationLine = {
       select {
         width: 100%;
         border-radius: 14px;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        background: rgba(15, 23, 42, 0.72);
-        color: #f8fafc;
+        border: 1px solid rgba(216, 180, 208, 0.8);
+        background: #fff;
+        color: #3a214e;
         padding: 12px 14px;
         outline: none;
       }
@@ -346,18 +348,18 @@ type OperationLine = {
       }
 
       .primary {
-        background: linear-gradient(135deg, #22c55e, #16a34a);
+        background: linear-gradient(135deg, #ec4899, #a855f7);
         color: white;
       }
 
       .secondary {
-        background: rgba(37, 99, 235, 0.18);
-        color: #dbeafe;
+        background: rgba(236, 72, 153, 0.08);
+        color: #a21caf;
       }
 
       .success {
-        background: rgba(34, 197, 94, 0.18);
-        color: #bbf7d0;
+        background: rgba(236, 72, 153, 0.12);
+        color: #7c3aed;
       }
 
       .table-wrap {
@@ -378,12 +380,12 @@ type OperationLine = {
       }
 
       th {
-        color: #cbd5e1;
+        color: #6b4f82;
         font-size: 0.9rem;
       }
 
       td {
-        color: #f8fafc;
+        color: #3a214e;
       }
 
       .empty-state {
@@ -392,8 +394,8 @@ type OperationLine = {
       }
 
       .link-danger {
-        background: rgba(239, 68, 68, 0.18);
-        color: #fecaca;
+        background: rgba(236, 72, 153, 0.08);
+        color: #be185d;
       }
 
       .totals-row {
@@ -402,7 +404,7 @@ type OperationLine = {
         gap: 12px;
         margin-top: 14px;
         padding-top: 14px;
-        border-top: 1px solid rgba(148, 163, 184, 0.12);
+        border-top: 1px solid rgba(236, 72, 153, 0.12);
       }
 
       .totals-row div {
@@ -423,7 +425,8 @@ type OperationLine = {
       .audit-item {
         padding: 12px 14px;
         border-radius: 14px;
-        background: rgba(15, 23, 42, 0.55);
+        background: #fff7fb;
+        border: 1px solid rgba(236, 72, 153, 0.1);
         display: grid;
         gap: 6px;
       }

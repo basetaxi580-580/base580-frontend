@@ -142,7 +142,7 @@ type ReportRow = {
       .reports-page {
         display: grid;
         gap: 18px;
-        color: #e2e8f0;
+        color: #43324f;
       }
 
       .page-header {
@@ -188,10 +188,11 @@ type ReportRow = {
       }
 
       .card {
-        border: 1px solid rgba(148, 163, 184, 0.16);
+        border: 1px solid rgba(236, 72, 153, 0.12);
         border-radius: 20px;
-        background: rgba(30, 41, 59, 0.56);
+        background: rgba(255, 255, 255, 0.88);
         padding: 18px;
+        box-shadow: 0 14px 30px rgba(176, 89, 152, 0.08);
       }
 
       .card-head {
@@ -207,7 +208,7 @@ type ReportRow = {
       .audit-item small,
       .empty-state,
       .folio-cell {
-        color: #94a3b8;
+        color: #8b6f96;
       }
 
       .filters-grid {
@@ -225,7 +226,8 @@ type ReportRow = {
       .summary-grid div {
         padding: 12px 14px;
         border-radius: 14px;
-        background: rgba(15, 23, 42, 0.55);
+        background: #fff7fb;
+        border: 1px solid rgba(236, 72, 153, 0.1);
         display: grid;
         gap: 4px;
       }
@@ -247,9 +249,9 @@ type ReportRow = {
       input {
         width: 100%;
         border-radius: 14px;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        background: rgba(15, 23, 42, 0.72);
-        color: #f8fafc;
+        border: 1px solid rgba(216, 180, 208, 0.8);
+        background: #fff;
+        color: #3a214e;
         padding: 12px 14px;
         outline: none;
       }
@@ -267,8 +269,8 @@ type ReportRow = {
       }
 
       .secondary {
-        background: rgba(37, 99, 235, 0.18);
-        color: #dbeafe;
+        background: rgba(236, 72, 153, 0.08);
+        color: #a21caf;
       }
 
       .table-wrap {
@@ -290,12 +292,12 @@ type ReportRow = {
       }
 
       th {
-        color: #cbd5e1;
+        color: #6b4f82;
         font-size: 0.9rem;
       }
 
       td {
-        color: #f8fafc;
+        color: #3a214e;
       }
 
       .empty-state {
@@ -316,7 +318,8 @@ type ReportRow = {
       .audit-item {
         padding: 12px 14px;
         border-radius: 14px;
-        background: rgba(15, 23, 42, 0.55);
+        background: #fff7fb;
+        border: 1px solid rgba(236, 72, 153, 0.1);
         display: grid;
         gap: 6px;
       }
