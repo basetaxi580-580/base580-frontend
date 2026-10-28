@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { BackendSyncService } from '../data/backend-api.service';
@@ -12,61 +12,63 @@ import { MemberStore, MemberProfile } from '../data/member.store';
   template: `
     <section class="capture-page">
       <div class="capture-header">
-        <div>
-          <p class="eyebrow">Captura</p>
-          <h2>{{ model.name }}</h2>
-          <p class="subtitle">ID {{ model.id }}</p>
-        </div>
+        <p class="eyebrow">Captura</p>
+        <h2>Socios</h2>
+      </div>
+      <div *ngIf="sync.loadStatus() !== 'ready'" role="alert">
+        <p *ngIf="sync.loadStatus() === 'loading'">Cargando datos del servidor…</p>
+        <p *ngIf="sync.loadStatus() === 'error'">No se pudo cargar el estado del servidor. La captura está bloqueada para proteger los datos.</p>
+        <button type="button" *ngIf="sync.loadStatus() === 'error'" [disabled]="busy || sync.pendingChanges()" (click)="reload()">Recargar desde el servidor</button>
+      </div>
+      <nav *ngIf="sync.loadStatus() === 'ready'" class="action-row" aria-label="Opciones de captura">
+        <button type="button" class="secondary" [disabled]="busy" (click)="showList()">Lista</button>
+        <button type="button" class="primary" [disabled]="busy" (click)="create()">Crear socio</button>
+      </nav>
+      <p class="save-note" role="status" *ngIf="message">{{ message }}</p>
+      <div *ngIf="syncError" role="alert">
+        <p>{{ syncError }}</p>
+        <button type="button" [disabled]="busy" (click)="retry()">Reintentar sincronización</button>
       </div>
 
-      <article class="capture-card">
-        <div class="card-head">
-          <h3>Datos operativos</h3>
-          <span>Sitio, placas, engomado y vigencia</span>
+      <article class="capture-card" *ngIf="sync.loadStatus() === 'ready' && view === 'list'">
+        <div class="card-head"><h3>Lista de socios</h3></div>
+        <p *ngIf="members.length === 0">No hay socios capturados.</p>
+        <div class="member-row" *ngFor="let member of members">
+          <div><strong>{{ member.name }}</strong><p>ID {{ member.id }} · {{ member.status }}</p></div>
+          <div class="action-row">
+            <button type="button" class="secondary" [disabled]="busy" (click)="edit(member.id)">Editar</button>
+            <button type="button" class="secondary" [disabled]="busy" (click)="remove(member)">Eliminar</button>
+          </div>
         </div>
+      </article>
 
+      <article class="capture-card" *ngIf="sync.loadStatus() === 'ready' && view === 'form'">
+        <div class="card-head"><h3>{{ editingId ? 'Editar socio' : 'Crear socio' }}</h3></div>
         <div class="form-grid">
-          <label>
-            <span>Sitio</span>
-            <input [(ngModel)]="model.site" name="site" type="text" />
-          </label>
-          <label>
-            <span>Placas</span>
-            <input [(ngModel)]="model.plate" name="plate" type="text" />
-          </label>
-          <label>
-            <span>Engomado</span>
-            <input [(ngModel)]="model.sticker" name="sticker" type="text" />
-          </label>
-          <label>
-            <span>Fecha de vencimiento</span>
-            <input [(ngModel)]="model.expiry" name="expiry" type="text" />
-          </label>
-          <label>
-            <span>Estatus</span>
-            <select [(ngModel)]="model.status" name="status">
-              <option value="OK">OK</option>
-              <option value="PENDIENTE">PENDIENTE</option>
-              <option value="INACTIVO">INACTIVO</option>
-            </select>
-          </label>
+          <label><span>ID *</span><input [(ngModel)]="model.id" name="id" type="text" [readonly]="!!editingId" maxlength="100" /></label>
+          <label><span>Nombre *</span><input [(ngModel)]="model.name" name="name" type="text" maxlength="200" /></label>
+          <label><span>Sitio</span><input [(ngModel)]="model.site" name="site" type="text" /></label>
+          <label><span>Placas</span><input [(ngModel)]="model.plate" name="plate" type="text" /></label>
+          <label><span>Engomado</span><input [(ngModel)]="model.sticker" name="sticker" type="text" /></label>
+          <label><span>Fecha de vencimiento</span><input [(ngModel)]="model.expiry" name="expiry" type="text" /></label>
+          <label><span>Estatus</span><select [(ngModel)]="model.status" name="status">
+            <option value="OK">OK</option><option value="PENDIENTE">PENDIENTE</option><option value="INACTIVO">INACTIVO</option>
+          </select></label>
         </div>
-
-        <label class="notes-field">
-          <span>Observaciones</span>
-          <textarea [(ngModel)]="model.notes" name="notes" rows="4"></textarea>
-        </label>
-
+        <label class="notes-field"><span>Observaciones</span><textarea [(ngModel)]="model.notes" name="notes" rows="4"></textarea></label>
+        <p *ngIf="validationError" role="alert">{{ validationError }}</p>
         <div class="action-row">
-          <button type="button" class="primary" (click)="save()">Guardar cambios</button>
-          <button type="button" class="secondary" (click)="reset()">Restaurar</button>
+          <button type="button" class="primary" [disabled]="busy" (click)="save()">Guardar</button>
+          <button type="button" class="secondary" [disabled]="busy" (click)="reset()">Restaurar</button>
+          <button type="button" class="secondary" [disabled]="busy" (click)="showList()">Cancelar</button>
         </div>
-        <p class="save-note" *ngIf="saved">Cambios guardados.</p>
       </article>
     </section>
   `,
   styles: [
     `
+      .member-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 0; border-bottom: 1px solid #eee; }
+      .member-row .action-row { margin-top: 0; }
       .capture-page {
         display: grid;
         gap: 18px;
@@ -198,34 +200,144 @@ import { MemberStore, MemberProfile } from '../data/member.store';
   ],
 })
 export class CapturePage {
+  private readonly changeDetector = inject(ChangeDetectorRef);
   private readonly route = inject(ActivatedRoute);
   private readonly store = inject(MemberStore);
-  private readonly sync = inject(BackendSyncService);
+  protected readonly sync = inject(BackendSyncService);
 
-  private readonly memberId = this.route.snapshot.paramMap.get('id') ?? '398';
-  private baseline = structuredClone(this.store.member(this.memberId) ?? this.store.member('398')!);
+  protected view: 'list' | 'form' = 'list';
+  protected editingId: string | null = null;
+  protected model: MemberProfile = this.emptyMember();
+  private baseline: MemberProfile = structuredClone(this.model);
+  protected message = '';
+  protected validationError = '';
+  protected syncError = '';
+  protected busy = false;
 
-  protected model: MemberProfile = structuredClone(this.baseline);
-  protected saved = false;
-
-  protected save(): void {
-    this.store.updateMember(this.memberId, {
-      site: this.model.site,
-      plate: this.model.plate,
-      sticker: this.model.sticker,
-      expiry: this.model.expiry,
-      status: this.model.status,
-      notes: this.model.notes,
+  constructor() {
+    this.route.paramMap.subscribe((params) => {
+      const id = params.get('id');
+      if (id && this.sync.loadStatus() === 'ready') this.edit(id);
+      else this.showList();
+      this.changeDetector.markForCheck();
     });
-    const stored = this.store.member(this.memberId);
-    this.baseline = structuredClone(stored ?? this.model);
+  }
+
+  protected get members(): MemberProfile[] { return this.store.membersList(); }
+
+  private emptyMember(): MemberProfile {
+    return { id: '', name: '', memberType: '', employee: '', site: '', plate: '', sticker: '', expiry: '',
+      status: 'PENDIENTE', dayTickets: 0, nightTickets: 0, totalTickets: 0,
+      nightSaving: 'N/A', personalSaving: 'N/A', cardPayment: 'N/A', history: [], notes: '' };
+  }
+
+  protected showList(): void {
+    this.view = 'list';
+    this.validationError = '';
+    this.message = '';
+  }
+
+  protected create(): void {
+    if (this.sync.loadStatus() !== 'ready') return;
+    this.editingId = null;
+    this.baseline = this.emptyMember();
+    this.reset();
+    this.view = 'form';
+  }
+
+  protected edit(id: string): void {
+    if (this.sync.loadStatus() !== 'ready') return;
+    const member = this.store.member(id);
+    if (!member) {
+      this.showList();
+      this.validationError = `No se encontró el socio con ID ${id}.`;
+      this.message = this.validationError;
+      return;
+    }
+    this.editingId = id;
+    this.baseline = structuredClone(member);
+    this.reset();
+    this.view = 'form';
+  }
+
+  protected async save(): Promise<void> {
+    if (this.sync.loadStatus() !== 'ready' || this.busy) return;
+    const id = this.model.id.trim();
+    const name = this.model.name.trim();
+    if (!id || !name) {
+      this.validationError = 'El ID y el nombre son obligatorios.';
+      return;
+    }
+    if (!this.editingId && this.store.member(id)) {
+      this.validationError = 'Ya existe un socio con ese ID.';
+      return;
+    }
+    if (this.editingId) {
+      if (!this.store.member(this.editingId)) {
+        this.validationError = 'El socio ya no existe. Vuelve a la lista.';
+        return;
+      }
+      this.store.updateMember(this.editingId, { name, site: this.model.site, plate: this.model.plate,
+        sticker: this.model.sticker, expiry: this.model.expiry, status: this.model.status, notes: this.model.notes });
+    } else if (!this.store.createMember({ ...this.model, id, name })) {
+      this.validationError = 'No se pudo crear el socio; verifica el ID y el nombre.';
+      return;
+    }
+    this.editingId = id;
+    this.baseline = structuredClone(this.store.member(id)!);
     this.model = structuredClone(this.baseline);
-    void this.sync.saveToBackend();
-    this.saved = true;
+    this.validationError = '';
+    await this.persist();
+  }
+
+  protected async remove(member: MemberProfile): Promise<void> {
+    if (this.sync.loadStatus() !== 'ready' || this.busy) return;
+    if (!window.confirm(`¿Eliminar al socio ${member.name} (ID ${member.id})?`)) return;
+    if (!this.store.deleteMember(member.id)) {
+      this.message = 'El socio ya no existe.';
+      return;
+    }
+    await this.persist();
+  }
+
+  protected async reload(): Promise<void> {
+    if (this.busy || this.sync.pendingChanges()) return;
+    this.busy = true;
+    try {
+      await this.sync.reloadFromBackend();
+      const id = this.route.snapshot?.paramMap.get('id');
+      if (id) this.edit(id);
+      else this.showList();
+    } catch {
+      // El estado de carga muestra el error y permite otro intento.
+    } finally {
+      this.busy = false;
+      this.changeDetector.markForCheck();
+    }
+  }
+
+  protected async retry(): Promise<void> {
+    if (!this.busy && this.sync.loadStatus() === 'ready') await this.persist();
+  }
+
+  private async persist(): Promise<void> {
+    this.busy = true;
+    this.message = '';
+    try {
+      await this.sync.saveToBackend();
+      this.syncError = '';
+      this.message = 'Cambios guardados en el servidor.';
+    } catch {
+      this.syncError = 'No se pudo confirmar el guardado en el servidor. El cambio sigue en esta sesión; reintenta antes de salir.';
+    } finally {
+      this.busy = false;
+      this.changeDetector.markForCheck();
+    }
   }
 
   protected reset(): void {
     this.model = structuredClone(this.baseline);
-    this.saved = false;
+    this.validationError = '';
+    this.message = '';
   }
 }

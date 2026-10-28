@@ -2,43 +2,125 @@ name: Deploy frontend
 
 on:
   push:
-    branches:
-      - main
-    paths:
-      - 'src/**'
-      - 'angular.json'
-      - 'proxy.conf.json'
-      - 'tsconfig*.json'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'Dockerfile'
-      - 'nginx.conf'
-      - '.dockerignore'
-      - '.github/workflows/deploy.yml'
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: frontend-deploy
   cancel-in-progress: false
 
-permissions:
-  contents: read
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - name: Deploy frontend on VM
-        uses: appleboy/ssh-action@v1.0.3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script_stop: true
-          command_timeout: 30m
-          script: |
-            set -e
-            cd ~/base580-frontend
-            git fetch origin main
-            git reset --hard origin/main
-            sudo bash "$HOME/base580-infra/scripts/deploy.sh" frontend "$PWD"
+          node-version: 24.15.0
+          cache: npm
+      - run: npm ci
+      - run: npm test -- --watch=false
+      - run: npm run build -- --configuration production
+      - name: Package frontend
+        run: |
+          set -euo pipefail
+          test -f dist/base580-frontend/browser/index.html
+          tar -czf "$RUNNER_TEMP/frontend.tar.gz" -C dist/base580-frontend/browser .
+      - name: Configure SSH
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+      - name: Transfer and update existing container
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER"
+          ssh_opts=(-i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o BatchMode=yes)
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          remote_dir="/tmp/base580-frontend-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ssh "${ssh_opts[@]}" "$target" "mkdir -m 700 '$remote_dir'"
+          scp "${ssh_opts[@]}" "$RUNNER_TEMP/frontend.tar.gz" "$target:$remote_dir/"
+          ssh "${ssh_opts[@]}" "$target" bash -s -- "$remote_dir" <<'REMOTE'
+          set -Eeuo pipefail
+          dir=$1
+          exec 9>"$HOME/.base580-frontend-deploy.lock"
+          flock -n 9 || { echo 'Another frontend deployment is running' >&2; exit 1; }
+          if docker info >/dev/null 2>&1; then d=(docker); else sudo -n docker info >/dev/null; d=(sudo -n docker); fi
+          container=base580-frontend
+          test "$("${d[@]}" inspect -f '{{.State.Running}}' "$container")" = true
+          "${d[@]}" inspect -f '{{json .NetworkSettings.Networks}}' "$container" | grep -q '"base580-net"'
+          # Refuse a second deployment until an interrupted one has been recovered.
+          "${d[@]}" exec "$container" sh -c 'test ! -e /tmp/base580-deploy-backup && test ! -e /tmp/base580-deploy-stage'
+          "${d[@]}" exec "$container" mkdir /tmp/base580-deploy-stage
+          rollback() {
+            status=$?
+            trap - EXIT
+            if [ "$status" -ne 0 ]; then
+              echo 'Deployment failed; restoring the previous frontend when available.' >&2
+              if "${d[@]}" exec "$container" sh -c '
+                if [ -d /tmp/base580-deploy-backup ]; then
+                  if [ -d /tmp/base580-deploy-backup/html ]; then
+                    rm -rf /usr/share/nginx/html
+                    mv /tmp/base580-deploy-backup/html /usr/share/nginx/html
+                  fi
+                  if [ -f /tmp/base580-deploy-backup/default.conf ]; then
+                    cp /tmp/base580-deploy-backup/default.conf /etc/nginx/conf.d/default.conf
+                  fi
+                  nginx -t && nginx -s reload
+                fi
+              '; then
+                "${d[@]}" exec "$container" rm -rf /tmp/base580-deploy-backup /tmp/base580-deploy-stage
+              else
+                echo 'Automatic rollback failed; backup remains in /tmp/base580-deploy-backup inside the container.' >&2
+              fi
+            fi
+            exit "$status"
+          }
+          trap rollback EXIT
+          "${d[@]}" cp "$dir/frontend.tar.gz" "$container:/tmp/base580-deploy-stage/frontend.tar.gz"
+          "${d[@]}" exec "$container" sh -ec '
+            mkdir /tmp/base580-deploy-stage/html
+            tar -xzf /tmp/base580-deploy-stage/frontend.tar.gz -C /tmp/base580-deploy-stage/html
+            test -f /tmp/base580-deploy-stage/html/index.html
+            mkdir /tmp/base580-deploy-backup
+            cp /etc/nginx/conf.d/default.conf /tmp/base580-deploy-backup/default.conf
+            mv /usr/share/nginx/html /tmp/base580-deploy-backup/html
+            mv /tmp/base580-deploy-stage/html /usr/share/nginx/html
+            nginx -t
+            nginx -s reload
+          '
+          healthy=false
+          for attempt in $(seq 1 12); do
+            if "${d[@]}" exec "$container" sh -ec '
+              wget -q -T 5 -O /tmp/base580-captura-check http://127.0.0.1/captura
+              cmp -s /tmp/base580-captura-check /usr/share/nginx/html/index.html
+              wget -q -T 5 -O /tmp/base580-api-check http://127.0.0.1/api/state
+              grep -q "^[[:space:]]*{" /tmp/base580-api-check
+            '; then healthy=true; break; fi
+            sleep 5
+          done
+          $healthy || { echo 'Frontend or API validation failed' >&2; exit 1; }
+          trap - EXIT
+          "${d[@]}" exec "$container" rm -rf /tmp/base580-deploy-backup /tmp/base580-deploy-stage /tmp/base580-captura-check /tmp/base580-api-check
+          # Save the validated running container as the image used for future recreations.
+          "${d[@]}" commit "$container" base580-frontend:latest >/dev/null
+          rm -rf -- "$dir"
+          echo 'Frontend updated and validated.'
+          REMOTE

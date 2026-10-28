@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
+import { inject, Injectable, signal } from '@angular/core';
+import { defer, firstValueFrom, tap } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { MemberStore, CatalogItem, PriceItem } from './member.store';
 
@@ -71,15 +71,39 @@ export class BackendSyncService {
   private readonly api = inject(BackendApiService);
   private readonly store = inject(MemberStore);
 
+  readonly loadStatus = signal<'loading' | 'ready' | 'error'>('loading');
+  readonly pendingChanges = signal(false);
+
   loadFromBackend() {
-    return this.api.getState();
+    return defer(() => {
+      if (this.pendingChanges()) throw new Error('Hay cambios locales pendientes de guardar.');
+      this.loadStatus.set('loading');
+      return this.api.getState().pipe(tap({ error: () => this.loadStatus.set('error') }));
+    });
   }
 
-  saveToBackend() {
-    return firstValueFrom(this.api.saveState(this.store.snapshot()));
+  async reloadFromBackend(): Promise<void> {
+    const state = await firstValueFrom(this.loadFromBackend());
+    this.syncLocalState(state);
+  }
+
+  async saveToBackend() {
+    if (this.loadStatus() !== 'ready') {
+      throw new Error('El estado del servidor no se ha cargado.');
+    }
+    this.pendingChanges.set(true);
+    const response = await firstValueFrom(this.api.saveState(this.store.snapshot()));
+    this.pendingChanges.set(false);
+    return response;
   }
 
   syncLocalState(state: AppStateDto): void {
+    if (this.pendingChanges()) throw new Error('Hay cambios locales pendientes de guardar.');
+    if (!state || !Array.isArray(state.members)) {
+      this.loadStatus.set('error');
+      throw new Error('El servidor devolvió un estado inválido.');
+    }
     this.store.applyState(state);
+    this.loadStatus.set('ready');
   }
 }

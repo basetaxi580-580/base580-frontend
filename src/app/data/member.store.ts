@@ -145,7 +145,7 @@ export class MemberStore {
   ]);
 
   member(id: string): MemberProfile | undefined {
-    return this.members()[id];
+    return Object.hasOwn(this.members(), id) ? this.members()[id] : undefined;
   }
 
   membersList(): MemberProfile[] {
@@ -164,13 +164,37 @@ export class MemberStore {
     });
   }
 
+  createMember(member: MemberProfile): boolean {
+    const id = member.id.trim();
+    const name = member.name.trim();
+    if (!id || !name || Object.hasOwn(this.members(), id)) return false;
+    this.members.update((members) => ({ ...members, [id]: { ...structuredClone(member), id, name } }));
+    return true;
+  }
+
+  deleteMember(id: string): boolean {
+    if (!Object.hasOwn(this.members(), id)) return false;
+    this.members.update((members) => {
+      const next = { ...members };
+      delete next[id];
+      return next;
+    });
+    this.audit.update((audit) => {
+      const next = { ...audit };
+      delete next[id];
+      return next;
+    });
+    return true;
+  }
+
   updateMember(id: string, patch: Partial<MemberProfile>): void {
-    const current = this.members()[id];
+    const current = this.member(id);
     if (!current) return;
 
     const updated = {
       ...current,
       ...patch,
+      id: current.id,
     };
 
     this.members.update((store) => ({
@@ -190,7 +214,7 @@ export class MemberStore {
   }
 
   addHistory(id: string, event: MemberHistoryEvent, type = 'general'): void {
-    const current = this.members()[id];
+    const current = this.member(id);
     if (!current) return;
 
     this.members.update((store) => ({
@@ -207,12 +231,12 @@ export class MemberStore {
   addAudit(id: string, event: AuditEvent, type = 'general'): void {
     this.audit.update((store) => ({
       ...store,
-      [id]: [{ type, ...event }, ...(store[id] ?? [])].slice(0, 20),
+      [id]: [{ type, ...event }, ...(Object.hasOwn(store, id) ? store[id] : [])].slice(0, 20),
     }));
   }
 
   timeline(id: string): TimelineEntry[] {
-    return this.audit()[id] ?? [];
+    return Object.hasOwn(this.audit(), id) ? this.audit()[id] : [];
   }
 
   snapshot(): AppStateDto {
