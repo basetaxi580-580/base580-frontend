@@ -10,7 +10,7 @@ const loadBackendState = (sync: BackendSyncService) => async () => {
     const state = await firstValueFrom(sync.loadFromBackend());
     sync.syncLocalState(state);
   } catch {
-    // Local-only mode if backend is unavailable.
+    // La aplicación arranca bloqueada para persistencia hasta recuperar el estado remoto.
   }
 };
 
