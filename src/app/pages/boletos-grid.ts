@@ -1,4 +1,10 @@
-export type CampoHoja = 'zona' | 'precio' | 'descuento' | 'sitio' | 'plata' | 'neto' | 'cantidad' | 'importe';
+/**
+ * Campos fijos del modelo de tarifas. Las hojas libres pueden además tener
+ * columnas dinámicas, cuyo id (string con prefijo `col-`) también viaja por
+ * este tipo; por eso se admite `string`.
+ */
+export type CampoFijo = 'zona' | 'precio' | 'descuento' | 'sitio' | 'plata' | 'neto' | 'cantidad' | 'importe';
+export type CampoHoja = CampoFijo | string;
 
 export type Posicion = { bloque: number; fila: number; col: number };
 

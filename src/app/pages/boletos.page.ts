@@ -52,9 +52,11 @@ type FormatoCelda = {
 type MedidasHoja = { cols: Record<string, number>; rows: Record<string, number> };
 type FusionCelda = { bloque: number; fila1: number; fila2: number; col1: number; col2: number };
 type PanelFormato = 'fuente' | 'texto' | 'celda';
-type CeldaSubMenu = 'alinear' | 'formato' | null;
+type CeldaSubMenu = 'alinear' | 'formato' | 'columna' | null;
 type FocoHdr = { campo: CampoHoja; pagar: string; lado: 'izq' | 'der' };
 type FocoTitulo = { bloqueId: string; lado: 'izq' | 'der' };
+/** Columna libre agregada por el usuario en una hoja libre. */
+type ColLibre = { id: string; etiqueta: string };
 type SnapshotHoja = {
   rows: Row[];
   formatos: Record<string, FormatoCelda>;
@@ -62,6 +64,8 @@ type SnapshotHoja = {
   fusiones: Record<string, FusionCelda[]>;
   etiquetas: Record<string, string>;
   tocadas: Record<string, true>;
+  columnasLibres: Record<string, ColLibre[]>;
+  valoresLibres: Record<string, string>;
   placas: string;
   nombre: string;
 };
@@ -189,6 +193,14 @@ type BandaHoja = {
             <button type="button" role="menuitem" (click)="aplicarNumero('entero')">Número</button>
             <button type="button" role="menuitem" (click)="aplicarNumero('decimal')">Decimal</button>
             <button type="button" role="menuitem" (click)="aplicarNumero('moneda')">Moneda</button>
+          </div>
+        </div>
+        <div class="menu-grupo" [class.abierto]="celdaSub === 'columna'" *ngIf="puedeColumnas()">
+          <button type="button" role="menuitem" class="con-sub" (click)="alternarSubMenu('columna')">Columna</button>
+          <div class="submenu" *ngIf="celdaSub === 'columna'" role="menu" aria-label="Columna">
+            <button type="button" role="menuitem" (click)="insertarColumna('izq')">Insertar a la izquierda</button>
+            <button type="button" role="menuitem" (click)="insertarColumna('der')">Insertar a la derecha</button>
+            <button type="button" role="menuitem" *ngIf="puedeEliminarColumna()" (click)="eliminarColumna()">Eliminar columna</button>
           </div>
         </div>
         <button type="button" role="menuitem" *ngIf="puedeCombinar()" (click)="combinarCeldas()">Combinar celdas</button>
@@ -828,6 +840,8 @@ export class BoletosPage {
   protected medidas: Record<string, MedidasHoja> = this.leerMedidas();
   protected fusiones: Record<string, FusionCelda[]> = this.leerFusiones();
   protected etiquetas: Record<string, string> = this.leerEtiquetas();
+  protected columnasLibres: Record<string, ColLibre[]> = this.leerColumnasLibres();
+  private valoresLibres: Record<string, string> = this.leerValoresLibres();
   protected resize: { tipo: 'col' | 'row'; clave: string; inicio: number; medida: number } | null = null;
   protected nombreEditando = false;
   protected nombreTexto = '';
@@ -1149,6 +1163,11 @@ export class BoletosPage {
       this.nombres = nombres;
       this.guardarNombres();
       this.guardarHojasLibres();
+      for (const col of this.columnasLibres[id] ?? []) this.limpiarColumna(col.id);
+      const cols = { ...this.columnasLibres };
+      delete cols[id];
+      this.columnasLibres = cols;
+      this.guardarColumnasLibres();
       this.editado();
     } else {
       if (!this.hojasOcultas.includes(id)) this.hojasOcultas = [...this.hojasOcultas, id];
@@ -1540,6 +1559,97 @@ export class BoletosPage {
   protected aplicarNumero(numero: 'entero' | 'decimal' | 'moneda'): void {
     this.aplicarFormato({ numero });
     this.cerrarCeldaMenu();
+  }
+
+  /** Solo en hojas libres se pueden agregar/quitar columnas dinámicas. */
+  protected puedeColumnas(): boolean {
+    return !!this.celdaMenu && this.hojaActual().libre === true;
+  }
+
+  /** Columna sobre la que se abrió el menú (encabezado o celda). */
+  private columnaObjetivo(): CampoHoja | null {
+    if (this.focoHdr) return this.focoHdr.campo;
+    if (this.foco) return this.columnas()[this.foco.col] ?? null;
+    return null;
+  }
+
+  protected puedeEliminarColumna(): boolean {
+    const objetivo = this.columnaObjetivo();
+    return !!objetivo && this.esColumnaLibre(objetivo);
+  }
+
+  protected insertarColumna(lado: 'izq' | 'der'): void {
+    if (!this.hojaActual().libre) {
+      this.cerrarCeldaMenu();
+      return;
+    }
+    const hojaId = this.hojaActiva;
+    this.conHistorial(() => {
+      const lista = [...this.columnasLibresActivas()];
+      const objetivo = this.columnaObjetivo();
+      const idx = objetivo && this.esColumnaLibre(objetivo) ? lista.findIndex((col) => col.id === objetivo) : -1;
+      const pos = idx >= 0 ? (lado === 'izq' ? idx : idx + 1) : lado === 'izq' ? 0 : lista.length;
+      const nueva: ColLibre = {
+        id: `col-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        etiqueta: `Columna ${lista.length + 1}`,
+      };
+      lista.splice(pos, 0, nueva);
+      this.columnasLibres = { ...this.columnasLibres, [hojaId]: lista };
+      this.guardarColumnasLibres();
+      this.editado();
+    });
+    this.cerrarCeldaMenu();
+    this.cd.detectChanges();
+  }
+
+  protected eliminarColumna(): void {
+    const objetivo = this.columnaObjetivo();
+    if (!objetivo || !this.esColumnaLibre(objetivo) || !this.hojaActual().libre) {
+      this.cerrarCeldaMenu();
+      return;
+    }
+    const hojaId = this.hojaActiva;
+    this.conHistorial(() => {
+      this.columnasLibres = {
+        ...this.columnasLibres,
+        [hojaId]: this.columnasLibresActivas().filter((col) => col.id !== objetivo),
+      };
+      this.guardarColumnasLibres();
+      this.limpiarColumna(objetivo);
+      this.focoHdr = null;
+      this.editado();
+    });
+    this.cerrarCeldaMenu();
+    this.cd.detectChanges();
+  }
+
+  /** Borra valores, fórmulas, formatos y etiquetas asociados a una columna libre. */
+  private limpiarColumna(campo: CampoHoja): void {
+    const sufijo = `|${campo}`;
+    const limpiar = (mapa: Record<string, unknown>): void => {
+      for (const clave of Object.keys(mapa)) {
+        if (clave.endsWith(sufijo) || clave.includes(`|${campo}|`)) delete mapa[clave];
+      }
+    };
+    const valores = { ...this.valoresLibres };
+    limpiar(valores);
+    this.valoresLibres = valores;
+    this.guardarValoresLibres();
+    const formulas = { ...this.formulas };
+    limpiar(formulas);
+    this.formulas = formulas;
+    this.guardarFormulas();
+    const formatos = { ...this.formatos };
+    limpiar(formatos);
+    this.formatos = formatos;
+    localStorage.setItem('boletos-formatos', JSON.stringify(this.formatos));
+    const etiquetas = { ...this.etiquetas };
+    limpiar(etiquetas);
+    this.etiquetas = etiquetas;
+    localStorage.setItem('boletos-etiquetas', JSON.stringify(this.etiquetas));
+    const errores = { ...this.errores };
+    limpiar(errores);
+    this.errores = errores;
   }
 
   protected puedeCombinar(): boolean {
@@ -1966,6 +2076,8 @@ export class BoletosPage {
       fusiones: structuredClone(this.fusiones),
       etiquetas: { ...this.etiquetas },
       tocadas: { ...this.tocadas },
+      columnasLibres: structuredClone(this.columnasLibres),
+      valoresLibres: { ...this.valoresLibres },
       placas: this.placas,
       nombre: this.nombre,
     };
@@ -1980,6 +2092,8 @@ export class BoletosPage {
       this.fusiones = structuredClone(snap.fusiones);
       this.etiquetas = { ...snap.etiquetas };
       this.tocadas = { ...snap.tocadas };
+      this.columnasLibres = structuredClone(snap.columnasLibres);
+      this.valoresLibres = { ...snap.valoresLibres };
       this.placas = snap.placas;
       this.nombre = snap.nombre;
       localStorage.setItem('boletos-formatos', JSON.stringify(this.formatos));
@@ -1987,6 +2101,8 @@ export class BoletosPage {
       localStorage.setItem('boletos-fusiones', JSON.stringify(this.fusiones));
       localStorage.setItem('boletos-etiquetas', JSON.stringify(this.etiquetas));
       localStorage.setItem('boletos-formulas-tocadas', JSON.stringify(this.tocadas));
+      this.guardarColumnasLibres();
+      this.guardarValoresLibres();
       this.armar();
       this.cd.detectChanges();
     } finally {
@@ -2270,7 +2386,9 @@ export class BoletosPage {
 
   protected columnas(): CampoHoja[] {
     const hoja = this.hojaActual();
-    return columnasDeBloque(hoja.plata, !!hoja.catalogo);
+    const base = columnasDeBloque(hoja.plata, !!hoja.catalogo);
+    if (!hoja.libre) return base;
+    return [...base, ...this.columnasLibresActivas().map((col) => col.id)];
   }
 
   private posDe(row: Row, campo: CampoHoja): Posicion | null {
@@ -2440,6 +2558,7 @@ export class BoletosPage {
   }
 
   private textoPlano(row: Row, campo: CampoHoja): string {
+    if (this.esColumnaLibre(campo)) return this.valoresLibres[this.claveFormato(row, campo)] ?? '';
     if (campo === 'zona') return row.zona;
     if (campo === 'neto') return String(netoDe(row));
     if (campo === 'importe') return String(importeDe(row));
@@ -2484,6 +2603,12 @@ export class BoletosPage {
       return;
     }
     if (!parcial || !texto.trim().startsWith('=')) this.quitarFormula(row, campo);
+    if (this.esColumnaLibre(campo)) {
+      this.ponerValorLibre(row, campo, texto);
+      this.editado();
+      this.recalcularFormulas();
+      return;
+    }
     if (campo === 'zona') {
       row.zona = texto;
       this.editado();
@@ -2762,6 +2887,12 @@ export class BoletosPage {
   }
 
   private numeroCelda(row: Row, campo: CampoHoja): number | string {
+    if (this.esColumnaLibre(campo)) {
+      const texto = this.valoresLibres[this.claveFormato(row, campo)] ?? '';
+      if (!texto.trim()) return 0;
+      const numero = leerNumero(texto);
+      return numero == null ? '#¡VALOR!' : numero;
+    }
     if (campo === 'zona') {
       if (!row.zona.trim()) return 0;
       const numero = leerNumero(row.zona);
@@ -2776,8 +2907,17 @@ export class BoletosPage {
     return row.cantidad ?? 0;
   }
 
+  private ponerValorLibre(row: Row, campo: CampoHoja, texto: string): void {
+    this.valoresLibres = { ...this.valoresLibres, [this.claveFormato(row, campo)]: texto };
+    this.guardarValoresLibres();
+  }
+
   private aplicarResultado(row: Row, campo: CampoHoja, valor: number): void {
     const redondo = Math.round(valor * 100) / 100;
+    if (this.esColumnaLibre(campo)) {
+      this.ponerValorLibre(row, campo, String(redondo));
+      return;
+    }
     if (campo === 'zona') row.zona = String(redondo);
     else if (campo === 'precio') row.precio = redondo;
     else if (campo === 'descuento') row.descuento = redondo;
@@ -2806,7 +2946,7 @@ export class BoletosPage {
     if (corte < 0) return null;
     const campo = clave.slice(corte + 1);
     const campos: CampoHoja[] = ['zona', 'precio', 'descuento', 'sitio', 'plata', 'neto', 'cantidad', 'importe'];
-    if (!campos.includes(campo as CampoHoja)) return null;
+    if (!this.esColumnaLibre(campo) && !campos.includes(campo as CampoHoja)) return null;
     const row = this.rows.find((item) => item.clave === clave.slice(0, corte));
     return row ? { row, campo: campo as CampoHoja } : null;
   }
@@ -2865,6 +3005,7 @@ export class BoletosPage {
 
   protected etiquetaColumnaDefault(campo: CampoHoja, pagar: string): string {
     const hoja = this.hojaActual();
+    if (this.esColumnaLibre(campo)) return this.etiquetaColLibre(campo);
     if (campo === 'zona') return 'Zona';
     if (campo === 'precio') return hoja.precio;
     if (campo === 'descuento') return hoja.descuento;
@@ -3169,6 +3310,50 @@ export class BoletosPage {
     } catch {
       return {};
     }
+  }
+
+  private leerColumnasLibres(): Record<string, ColLibre[]> {
+    try {
+      const raw = localStorage.getItem('boletos-columnas-libres');
+      if (!raw) return {};
+      const parsed = JSON.parse(raw) as Record<string, ColLibre[]>;
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private guardarColumnasLibres(): void {
+    localStorage.setItem('boletos-columnas-libres', JSON.stringify(this.columnasLibres));
+  }
+
+  private leerValoresLibres(): Record<string, string> {
+    try {
+      const raw = localStorage.getItem('boletos-valores-libres');
+      if (!raw) return {};
+      const parsed = JSON.parse(raw) as Record<string, string>;
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private guardarValoresLibres(): void {
+    localStorage.setItem('boletos-valores-libres', JSON.stringify(this.valoresLibres));
+  }
+
+  /** Una columna dinámica de hoja libre (id con prefijo `col-`), no un campo fijo. */
+  protected esColumnaLibre(campo: CampoHoja): boolean {
+    return typeof campo === 'string' && campo.startsWith('col-');
+  }
+
+  private columnasLibresActivas(): ColLibre[] {
+    return this.columnasLibres[this.hojaActiva] ?? [];
+  }
+
+  private etiquetaColLibre(campo: CampoHoja): string {
+    const col = this.columnasLibresActivas().find((item) => item.id === campo);
+    return col?.etiqueta ?? 'Columna';
   }
 }
 
