@@ -1,0 +1,120 @@
+import libroJson from './boletos-libro.data.json';
+import { evaluarFormula } from './boletos-formula';
+import { LibroJson, MotorLibro, formatear, fusionarCapturas, redondearExcel } from './boletos-libro';
+
+const libro = libroJson as unknown as LibroJson;
+
+describe('Réplica de PAGO BOLETOS 2026.xlsx', () => {
+  it('trae las 19 hojas en el orden del Excel', () => {
+    expect(libro.sheets.map((hoja) => hoja.name.trim())).toEqual([
+      'BASE NTE 25',
+      'BASE NTE 26',
+      'BASE NORTE ESPECIALES',
+      'BASE TAPO 24',
+      'BASE TAPO 25',
+      'BASE TAPO REZ',
+      'BASE PTE 25',
+      'BASE PTE',
+      'BASE SUR 25',
+      'BASE SUR 26',
+      'TAPO 25',
+      'NORTE 25',
+      'NORTE 26',
+      'NORTE ESPECIALES',
+      'PTE',
+      'SUR 25',
+      'SUR 26',
+      'MANUALES',
+      'TOTAL',
+    ]);
+  });
+
+  it('calcula cada fórmula igual que Excel (valores guardados en el .xlsx)', () => {
+    const motor = new MotorLibro(libro);
+    const diferencias: string[] = [];
+    let total = 0;
+    for (const hoja of libro.sheets) {
+      for (const [ref, celda] of Object.entries(hoja.cells)) {
+        const [, formula, , esperado] = celda;
+        if (!formula) continue;
+        total++;
+        const obtenido = motor.valor(hoja.name, ref);
+        const ok =
+          typeof esperado === 'number' &&
+          obtenido.tipo === 'numero' &&
+          Math.abs(obtenido.n - esperado) <= 1e-9 * Math.max(1, Math.abs(esperado));
+        if (!ok) diferencias.push(`${hoja.name}!${ref} ${formula} esperado=${esperado} obtenido=${JSON.stringify(obtenido)}`);
+      }
+    }
+    expect(total).toBe(2691);
+    expect(diferencias).toEqual([]);
+  });
+
+  it('lee referencias a otras hojas, con y sin comillas', () => {
+    const leidas: string[] = [];
+    const leer = (ref: string) => {
+      leidas.push(ref);
+      return 2;
+    };
+    expect(evaluarFormula("='BASE NTE 25 '!F20*K3", leer)).toBe(4);
+    expect(evaluarFormula('=+PTE!D25+MANUALES!R9', leer)).toBe(4);
+    expect(evaluarFormula("=SUM('BASE PTE'!B3:B4)", leer)).toBe(4);
+    expect(leidas).toEqual(['BASE NTE 25 !F20', 'K3', 'PTE!D25', 'MANUALES!R9', 'BASE PTE!B3', 'BASE PTE!B4']);
+  });
+
+  it('recalcula en cadena de la captura al TOTAL', () => {
+    const motor = new MotorLibro(libro);
+    const tarifa = motor.numero('BASE NTE 26', 'F3');
+    const senc = motor.numero('NORTE 26', 'D24');
+    const total = motor.numero('TOTAL', 'D4');
+
+    motor.establecer('NORTE 26', 'A3', '2');
+
+    expect(motor.numero('NORTE 26', 'D3')).toBeCloseTo(2 * tarifa, 9);
+    expect(motor.numero('NORTE 26', 'D21')).toBeCloseTo(2 * tarifa, 9);
+    expect(motor.numero('NORTE 26', 'D24')).toBe(senc + 2);
+    expect(motor.numero('TOTAL', 'D4')).toBe(total + 2);
+  });
+
+  it('cambiar una tarifa BASE impacta la captura que la usa', () => {
+    const motor = new MotorLibro(libro);
+    motor.establecer('NORTE 26', 'A3', '1');
+    const antes = motor.numero('NORTE 26', 'D3');
+    motor.establecer('BASE NTE 26', 'B3', String(motor.numero('BASE NTE 26', 'B3') + 10));
+    expect(motor.numero('NORTE 26', 'D3')).toBeCloseTo(antes + 10, 9);
+  });
+
+  it('volver al valor original descarta la captura', () => {
+    const motor = new MotorLibro(libro);
+    motor.establecer('NORTE 26', 'A3', '3');
+    expect(motor.tieneCaptura('NORTE 26', 'A3')).toBe(true);
+    motor.establecer('NORTE 26', 'A3', '');
+    expect(motor.tieneCaptura('NORTE 26', 'A3')).toBe(false);
+    expect(motor.capturas()).toEqual({});
+  });
+
+  it('las celdas con fórmula del Excel quedan protegidas', () => {
+    const motor = new MotorLibro(libro);
+    expect(motor.protegida('NORTE 26', 'D3')).toBe(true);
+    expect(motor.protegida('NORTE 26', 'A3')).toBe(false);
+    expect(motor.hojaInicial().name).toBe('TAPO 25');
+  });
+
+  it('fusiona capturas de otro equipo sin perder las propias', () => {
+    const base = { 'NORTE 26!A3': '1', 'PTE!A5': '2' };
+    const servidor = { 'NORTE 26!A3': '1', 'PTE!A5': '9', 'SUR 25!A4': '7' };
+    const local = { 'NORTE 26!A3': '4' };
+    // Local cambió A3 y borró PTE!A5; el servidor agregó SUR 25!A4.
+    expect(fusionarCapturas(servidor, base, local)).toEqual({ 'NORTE 26!A3': '4', 'SUR 25!A4': '7' });
+  });
+
+  it('formatea moneda como Excel', () => {
+    expect(formatear({ tipo: 'numero', n: 1395.29 }, 'm2a')).toEqual({ texto: '1,395.29', simbolo: '$', alinear: 'right', rojo: false });
+    expect(formatear({ tipo: 'numero', n: 0 }, 'm2a').texto).toBe('-');
+    expect(formatear({ tipo: 'numero', n: -5 }, 'm2r')).toEqual({ texto: '-$5.00', alinear: 'right', rojo: true });
+    expect(formatear({ tipo: 'numero', n: 157.25 }, 'm1r').texto).toBe('$157.3');
+    expect(formatear({ tipo: 'numero', n: 0.1 + 0.2 }, 'g').texto).toBe('0.3');
+    expect(redondearExcel(1.005, 2)).toBe(1.01);
+    expect(redondearExcel(-2.5, 0)).toBe(-3);
+  });
+});

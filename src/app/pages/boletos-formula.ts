@@ -1,4 +1,11 @@
-export type LeerCelda = (ref: string) => number | string;
+/**
+ * Lee el valor de una referencia. `ref` puede venir calificada con hoja
+ * (`Hoja!A1`, sin comillas aunque el nombre tenga espacios).
+ * Devuelve número, un código de error (string) o `null` para "vacío/ignorar":
+ * una celda vacía vale 0 en aritmética y se omite dentro de rangos (igual que Excel).
+ * `enRango` indica que la referencia es parte de un rango (p. ej. SUM(A1:A9)).
+ */
+export type LeerCelda = (ref: string, enRango?: boolean) => number | string | null;
 
 const FUNCIONES: Record<string, (args: Array<number | number[]>) => number | string> = {
   SUMA: sumar,
@@ -99,7 +106,7 @@ class Parser {
     }
     if (token.t === 'ref') {
       this.i++;
-      return this.comoNumero(this.leer(token.v));
+      return this.comoNumero(this.leer(token.v, false));
     }
     if (token.t === 'name') {
       this.i++;
@@ -149,7 +156,8 @@ class Parser {
       if (!refs) return this.fallar('#¡REF!');
       const numeros: number[] = [];
       for (const ref of refs) {
-        const valor = this.leer(ref);
+        const valor = this.leer(ref, true);
+        if (valor === null) continue;
         if (typeof valor === 'string') return this.fallar(valor);
         numeros.push(valor);
       }
@@ -164,7 +172,8 @@ class Parser {
     return valor;
   }
 
-  private comoNumero(valor: number | string): number | string {
+  private comoNumero(valor: number | string | null): number | string {
+    if (valor === null) return 0;
     if (typeof valor === 'string') this.error = valor;
     return valor;
   }
@@ -198,6 +207,36 @@ function tokenizar(fuente: string): Token[] | null {
     if (char === ')') { tokens.push({ t: 'rp' }); i++; continue; }
     if (char === ':') { tokens.push({ t: 'colon' }); i++; continue; }
     if (char === ';' || char === ',') { tokens.push({ t: 'sep' }); i++; continue; }
+    if (char === "'") {
+      // 'Nombre de hoja'!A1  ('' dentro del nombre = comilla literal)
+      let j = i + 1;
+      let hoja = '';
+      while (j < fuente.length) {
+        if (fuente[j] === "'") {
+          if (fuente[j + 1] === "'") {
+            hoja += "'";
+            j += 2;
+            continue;
+          }
+          break;
+        }
+        hoja += fuente[j++];
+      }
+      if (fuente[j] !== "'" || fuente[j + 1] !== '!') return null;
+      const ref = leerRef(fuente, j + 2);
+      if (!ref) return null;
+      tokens.push({ t: 'ref', v: `${hoja}!${ref.ref}` });
+      i = ref.fin;
+      continue;
+    }
+    const hojaSinComillas = /^([A-Za-z0-9_.ÁÉÍÓÚÑáéíóúñ]+)!/.exec(fuente.slice(i));
+    if (hojaSinComillas && /[A-Za-z_ÁÉÍÓÚÑáéíóúñ]/.test(char)) {
+      const ref = leerRef(fuente, i + hojaSinComillas[0].length);
+      if (!ref) return null;
+      tokens.push({ t: 'ref', v: `${hojaSinComillas[1]}!${ref.ref}` });
+      i = ref.fin;
+      continue;
+    }
     if (/[0-9.]/.test(char)) {
       let j = i;
       let texto = '';
@@ -285,13 +324,39 @@ function aplanar(args: Array<number | number[]>): number[] {
   return lista;
 }
 
+/** Lee `$A$1` desde `inicio`; devuelve la referencia normalizada (`A1`) y dónde termina. */
+function leerRef(fuente: string, inicio: number): { ref: string; fin: number } | null {
+  let j = inicio;
+  if (fuente[j] === '$') j++;
+  const desde = j;
+  while (j < fuente.length && /[A-Za-z]/.test(fuente[j])) j++;
+  const letras = fuente.slice(desde, j).toUpperCase();
+  if (fuente[j] === '$') j++;
+  let fila = '';
+  while (j < fuente.length && /[0-9]/.test(fuente[j])) fila += fuente[j++];
+  if (!letras || !fila || indiceColumna(letras) < 0) return null;
+  return { ref: `${letras}${fila}`, fin: j };
+}
+
+/** Separa `Hoja!A1` en hoja y referencia; sin hoja devuelve `hoja: null`. */
+export function separarRef(ref: string): { hoja: string | null; ref: string } {
+  const corte = ref.lastIndexOf('!');
+  if (corte < 0) return { hoja: null, ref };
+  return { hoja: ref.slice(0, corte), ref: ref.slice(corte + 1) };
+}
+
 function refsDeRango(desde: string, hasta: string): string[] | null {
-  const a = partir(desde);
-  const b = partir(hasta);
+  const izq = separarRef(desde);
+  const der = separarRef(hasta);
+  if (izq.hoja !== null && der.hoja !== null && izq.hoja !== der.hoja) return null;
+  const hoja = izq.hoja ?? der.hoja;
+  const a = partir(izq.ref);
+  const b = partir(der.ref);
   if (!a || !b) return null;
+  const prefijo = hoja === null ? '' : `${hoja}!`;
   const refs: string[] = [];
   for (let fila = Math.min(a.fila, b.fila); fila <= Math.max(a.fila, b.fila); fila++) {
-    for (let col = Math.min(a.col, b.col); col <= Math.max(a.col, b.col); col++) refs.push(`${letraColumna(col)}${fila}`);
+    for (let col = Math.min(a.col, b.col); col <= Math.max(a.col, b.col); col++) refs.push(`${prefijo}${letraColumna(col)}${fila}`);
   }
   return refs;
 }

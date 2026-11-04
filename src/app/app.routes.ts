@@ -21,7 +21,13 @@ export const routes: Routes = [
     loadComponent: async () => (await import('./pages/capture.page')).CapturePage,
   },
   {
+    // Réplica fiel de PAGO BOLETOS 2026.xlsx.
     path: 'boletos',
+    loadComponent: async () => (await import('./pages/boletos-libro.page')).BoletosLibroPage,
+  },
+  {
+    // Versión anterior (modelo de tarifas), mientras se valida la réplica.
+    path: 'boletos/anterior',
     loadComponent: async () => (await import('./pages/boletos.page')).BoletosPage,
   },
   {
