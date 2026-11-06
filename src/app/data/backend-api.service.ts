@@ -61,8 +61,8 @@ export class BackendApiService {
     return this.http.get<AppStateDto>(`${environment.apiUrl}/state`);
   }
 
-  saveState(state: AppStateDto) {
-    return this.http.put<AppStateDto>(`${environment.apiUrl}/state`, state);
+  saveState(state: AppStateDto, version: string) {
+    return this.http.put<AppStateDto>(`${environment.apiUrl}/state`, state, { headers: { 'If-Match': `"${version}"` } });
   }
 }
 
@@ -73,6 +73,22 @@ export class BackendSyncService {
 
   readonly loadStatus = signal<'loading' | 'ready' | 'error'>('loading');
   readonly pendingChanges = signal(false);
+  private serverState: AppStateDto | null = null;
+
+  currentServerState(): AppStateDto | null {
+    return this.serverState ? structuredClone(this.serverState) : null;
+  }
+
+  async readCurrent(): Promise<AppStateDto> {
+    return firstValueFrom(this.api.getState());
+  }
+
+  async publishDraft(state: AppStateDto, expected: AppStateDto): Promise<AppStateDto> {
+    const result = await firstValueFrom(this.api.saveState(state, expected.updatedAt ?? 'none'));
+    this.serverState = structuredClone(result);
+    this.store.applyState(result);
+    return result;
+  }
 
   loadFromBackend() {
     return defer(() => {
@@ -92,7 +108,8 @@ export class BackendSyncService {
       throw new Error('El estado del servidor no se ha cargado.');
     }
     this.pendingChanges.set(true);
-    const response = await firstValueFrom(this.api.saveState(this.store.snapshot()));
+    const response = await firstValueFrom(this.api.saveState(this.store.snapshot(), this.serverState?.updatedAt ?? 'none'));
+    this.serverState = structuredClone(response);
     this.pendingChanges.set(false);
     return response;
   }
@@ -104,6 +121,7 @@ export class BackendSyncService {
       throw new Error('El servidor devolvió un estado inválido.');
     }
     this.store.applyState(state);
+    this.serverState = structuredClone(state);
     this.loadStatus.set('ready');
   }
 }

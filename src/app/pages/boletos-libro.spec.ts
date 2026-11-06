@@ -117,4 +117,46 @@ describe('Réplica de PAGO BOLETOS 2026.xlsx', () => {
     expect(redondearExcel(1.005, 2)).toBe(1.01);
     expect(redondearExcel(-2.5, 0)).toBe(-3);
   });
+
+  it('aplica, comparte y descarta formato de celda', () => {
+    const motor = new MotorLibro(libro);
+    expect(motor.estilo('NORTE 26', 'A3').b).toBeFalsy();
+
+    motor.establecerFormato('NORTE 26', 'A3', { b: true, sz: 14 });
+    expect(motor.estilo('NORTE 26', 'A3').b).toBe(true);
+    expect(motor.estilo('NORTE 26', 'A3').sz).toBe(14);
+    expect(motor.formatos()['NORTE 26!A3']).toEqual({ b: true, sz: 14 });
+
+    const otro = new MotorLibro(libro);
+    otro.reemplazarFormatos(motor.formatos());
+    expect(otro.estilo('NORTE 26', 'A3').b).toBe(true);
+
+    // Quitar la negrita vuelve al original; limpiar borra el formato propio.
+    motor.establecerFormato('NORTE 26', 'A3', { b: false });
+    expect(motor.estilo('NORTE 26', 'A3').b).toBeFalsy();
+    motor.limpiarFormato('NORTE 26', 'A3');
+    expect(motor.tieneFormato('NORTE 26', 'A3')).toBe(false);
+  });
+
+  it('inserta y elimina columnas conservando los cálculos', () => {
+    const motor = new MotorLibro(libro);
+    motor.establecer('NORTE 26', 'A3', '2');
+    const total = motor.numero('TOTAL', 'D4');
+
+    // Insertar una columna vacía a la izquierda de NORTE 26 no cambia TOTAL (otra hoja).
+    expect(motor.insertarColumna('NORTE 26', 0)).toBe(true);
+    expect(motor.estructura().length).toBe(1);
+    expect(motor.numero('TOTAL', 'D4')).toBe(total);
+    // La captura y la fórmula se desplazaron juntas: el PAGAR quedó en E3.
+    expect(motor.numero('NORTE 26', 'E3')).toBeGreaterThan(0);
+
+    // Eliminar la misma columna (ahora vacía) deja registradas las dos operaciones
+    // (insertar + eliminar, longitud 2), pero los cálculos quedan restaurados.
+    expect(motor.eliminarColumna('NORTE 26', 0).ok).toBe(true);
+    expect(motor.estructura().length).toBe(2);
+    expect(motor.numero('TOTAL', 'D4')).toBe(total);
+
+    // No se puede eliminar una columna usada por fórmulas (col A alimenta los PAGAR).
+    expect(new MotorLibro(libro).eliminarColumna('NORTE 26', 0).ok).toBe(false);
+  });
 });

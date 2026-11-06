@@ -1,4 +1,4 @@
-import { evaluarFormula, indiceColumna, letraColumna, separarRef } from './boletos-formula';
+import { desplazarColumnas, evaluarFormula, indiceColumna, letraColumna, separarRef } from './boletos-formula';
 import { leerNumero } from './boletos-grid';
 
 /**
@@ -11,6 +11,8 @@ import { leerNumero } from './boletos-grid';
  */
 
 export type ValorLibro = string | number | boolean | null;
+/** Operación estructural sobre columnas de una hoja. */
+export type OpLibro = { hoja: string; tipo: 'insCol' | 'delCol'; col: number };
 /** [valor, fórmula, índice de estilo, valor calculado por Excel] */
 export type CeldaLibro = [ValorLibro, string | null, number, ValorLibro];
 
@@ -77,17 +79,29 @@ export type ValorCalculado =
 const VACIO: ValorCalculado = { tipo: 'vacio' };
 
 export class MotorLibro {
-  private readonly porNombre = new Map<string, HojaLibro>();
+  private porNombre = new Map<string, HojaLibro>();
   private readonly memo = new Map<string, ValorCalculado>();
   private readonly evaluando = new Set<string>();
   private entradas: Record<string, string>;
+  /** Formato aplicado por el usuario encima del Excel (clave `Hoja!A1`). */
+  private formatosMap: Record<string, EstiloLibro> = {};
+  /** Libro original inmutable del Excel. */
+  private readonly original: LibroJson;
+  /** Operaciones de columna aplicadas, en orden. */
+  private ops: OpLibro[] = [];
+  /** Copia de trabajo (el original con columnas insertadas/eliminadas). */
+  libro: LibroJson;
 
-  constructor(
-    readonly libro: LibroJson,
-    entradas: Record<string, string> = {},
-  ) {
-    for (const hoja of libro.sheets) this.porNombre.set(hoja.name, hoja);
+  constructor(libro: LibroJson, entradas: Record<string, string> = {}) {
+    this.original = clonarLibro(libro);
+    this.libro = clonarLibro(libro);
+    this.indexar();
     this.entradas = { ...entradas };
+  }
+
+  private indexar(): void {
+    this.porNombre = new Map<string, HojaLibro>();
+    for (const hoja of this.libro.sheets) this.porNombre.set(hoja.name, hoja);
   }
 
   get hojas(): HojaLibro[] {
@@ -102,9 +116,17 @@ export class MotorLibro {
     return this.libro.sheets.find((hoja) => hoja.name.trim().toUpperCase() === buscado);
   }
 
-  estilo(hoja: string, ref: string): EstiloLibro {
+  /** Estilo original del Excel para una celda. */
+  estiloBase(hoja: string, ref: string): EstiloLibro {
     const celda = this.hoja(hoja)?.cells[ref];
     return celda ? (this.libro.styles[celda[2]] ?? {}) : {};
+  }
+
+  /** Estilo efectivo: el del Excel con el formato que el usuario aplicó encima. */
+  estilo(hoja: string, ref: string): EstiloLibro {
+    const override = this.formatosMap[claveDe(hoja, ref)];
+    const base = this.estiloBase(hoja, ref);
+    return override ? { ...base, ...override } : base;
   }
 
   esFormula(hoja: string, ref: string): boolean {
@@ -146,6 +168,146 @@ export class MotorLibro {
   reemplazarCapturas(entradas: Record<string, string>): void {
     this.entradas = { ...entradas };
     this.memo.clear();
+  }
+
+  /** Formato aplicado por el usuario, por celda (clave `Hoja!A1`). */
+  formatos(): Record<string, EstiloLibro> {
+    return clonarFormatos(this.formatosMap);
+  }
+
+  /** Reemplaza todo el formato del usuario (al cargar, restaurar o deshacer). */
+  reemplazarFormatos(formatos: Record<string, EstiloLibro>): void {
+    this.formatosMap = clonarFormatos(formatos);
+  }
+
+  /** Formato propio de una celda (sin el del Excel); undefined si no tiene. */
+  formatoDe(hoja: string, ref: string): EstiloLibro | undefined {
+    return this.formatosMap[claveDe(hoja, ref)];
+  }
+
+  tieneFormato(hoja: string, ref: string): boolean {
+    return claveDe(hoja, ref) in this.formatosMap;
+  }
+
+  /**
+   * Aplica un cambio parcial de estilo a una celda. Una propiedad que vuelve a
+   * coincidir con el Excel original se descarta; si la celda queda sin cambios,
+   * se elimina su formato.
+   */
+  establecerFormato(hoja: string, ref: string, cambio: Partial<EstiloLibro>): void {
+    const clave = claveDe(hoja, ref);
+    const base = this.estiloBase(hoja, ref);
+    const actual: EstiloLibro = { ...(this.formatosMap[clave] ?? {}) };
+    for (const llave of Object.keys(cambio) as (keyof EstiloLibro)[]) {
+      const valor = cambio[llave];
+      if (valor === undefined || valor === null || valor === '') delete actual[llave];
+      else (actual as Record<string, unknown>)[llave] = valor;
+      if (igualAlBase(actual, base, llave)) delete actual[llave];
+    }
+    if (Object.keys(actual).length === 0) delete this.formatosMap[clave];
+    else this.formatosMap[clave] = actual;
+  }
+
+  /** Quita todo el formato que el usuario aplicó en una celda (vuelve al Excel). */
+  limpiarFormato(hoja: string, ref: string): void {
+    delete this.formatosMap[claveDe(hoja, ref)];
+  }
+
+  /** Operaciones de columna aplicadas (para guardar/deshacer). */
+  estructura(): OpLibro[] {
+    return this.ops.map((op) => ({ ...op }));
+  }
+
+  /** Reconstruye el libro desde el original aplicando una lista de operaciones (al cargar/deshacer). */
+  aplicarEstructura(ops: OpLibro[]): void {
+    this.ops = ops.map((op) => ({ ...op }));
+    this.reconstruir();
+  }
+
+  private reconstruir(): void {
+    this.libro = clonarLibro(this.original);
+    this.indexar();
+    for (const op of this.ops) this.ejecutarOp(op);
+    this.memo.clear();
+  }
+
+  /** Inserta una columna en `col` (0-based). Desplaza celdas, fórmulas, anchos y capturas. */
+  insertarColumna(hojaNombre: string, col: number): boolean {
+    const hoja = this.hoja(hojaNombre);
+    if (!hoja || col < 0) return false;
+    const op: OpLibro = { hoja: hoja.name, tipo: 'insCol', col };
+    this.ops.push(op);
+    this.reconstruir();
+    this.entradas = desplazarClaves(this.entradas, hoja.name, col, 1);
+    this.formatosMap = desplazarClaves(this.formatosMap, hoja.name, col, 1);
+    this.memo.clear();
+    return true;
+  }
+
+  /** Elimina la columna `col`. Si alguna fórmula la referencia, no la elimina y dice cuál. */
+  eliminarColumna(hojaNombre: string, col: number): { ok: boolean; motivo?: string } {
+    const hoja = this.hoja(hojaNombre);
+    if (!hoja || col < 0) return { ok: false, motivo: 'Columna no válida.' };
+    const usada = this.columnaReferenciada(hoja.name, col);
+    if (usada) {
+      return { ok: false, motivo: `No se puede eliminar la columna ${letraColumna(col)}: la usan fórmulas (p. ej. ${usada}).` };
+    }
+    const op: OpLibro = { hoja: hoja.name, tipo: 'delCol', col };
+    this.ops.push(op);
+    this.reconstruir();
+    this.entradas = desplazarClaves(this.entradas, hoja.name, col, -1);
+    this.formatosMap = desplazarClaves(this.formatosMap, hoja.name, col, -1);
+    this.memo.clear();
+    return { ok: true };
+  }
+
+  /** Primera fórmula (de cualquier hoja) que referencia la columna `col` de `hojaNombre`, o null. */
+  private columnaReferenciada(hojaNombre: string, col: number): string | null {
+    for (const hoja of this.libro.sheets) {
+      for (const [ref, celda] of Object.entries(hoja.cells)) {
+        if (!celda[1]) continue;
+        if (desplazarColumnas(celda[1], hoja.name, { hoja: hojaNombre, col, delta: -1 }).refInvalida) {
+          return `${hoja.name.trim()}!${ref}`;
+        }
+      }
+    }
+    return null;
+  }
+
+  private ejecutarOp(op: OpLibro): void {
+    const hoja = this.hoja(op.hoja);
+    if (!hoja) return;
+    const delta = op.tipo === 'insCol' ? 1 : -1;
+    // 1) Mover las celdas de la hoja.
+    const celdas: Record<string, CeldaLibro> = {};
+    for (const [ref, celda] of Object.entries(hoja.cells)) {
+      const match = /^([A-Z]+)(\d+)$/.exec(ref);
+      if (!match) {
+        celdas[ref] = celda;
+        continue;
+      }
+      const c = indiceColumna(match[1]);
+      const nueva = delta > 0 ? (c >= op.col ? c + 1 : c) : c === op.col ? -1 : c > op.col ? c - 1 : c;
+      if (nueva < 0) continue;
+      celdas[`${letraColumna(nueva)}${match[2]}`] = celda;
+    }
+    hoja.cells = celdas;
+    hoja.cols = desplazarAnchos(hoja.cols, op.col, delta);
+    hoja.hiddenCols = desplazarOcultas(hoja.hiddenCols, op.col, delta);
+    if (delta > 0) {
+      hoja.maxCol += 1;
+      if (hoja.verCols != null) hoja.verCols += 1;
+    } else {
+      hoja.maxCol = Math.max(1, hoja.maxCol - 1);
+      if (hoja.verCols != null) hoja.verCols = Math.max(1, hoja.verCols - 1);
+    }
+    // 2) Reescribir las fórmulas de todas las hojas (refs a la hoja afectada).
+    for (const otra of this.libro.sheets) {
+      for (const celda of Object.values(otra.cells)) {
+        if (!celda[1]) continue;
+        celda[1] = desplazarColumnas(celda[1], otra.name, { hoja: hoja.name, col: op.col, delta }).formula;
+      }
+    }
   }
 
   tieneCaptura(hoja: string, ref: string): boolean {
@@ -212,6 +374,86 @@ export class MotorLibro {
 
 export function claveDe(hoja: string, ref: string): string {
   return `${hoja}!${ref}`;
+}
+
+/** Copia profunda ligera de un mapa de estilos por celda. */
+function clonarFormatos(f: Record<string, EstiloLibro>): Record<string, EstiloLibro> {
+  const r: Record<string, EstiloLibro> = {};
+  for (const [clave, estilo] of Object.entries(f)) r[clave] = { ...estilo };
+  return r;
+}
+
+/** Copia profunda del libro (el original se conserva intacto). */
+function clonarLibro(libro: LibroJson): LibroJson {
+  return JSON.parse(JSON.stringify(libro)) as LibroJson;
+}
+
+/** Desplaza las claves `Hoja!A1` de una hoja al insertar (delta>0) o eliminar (delta<0) una columna. */
+function desplazarClaves<T>(mapa: Record<string, T>, hojaNombre: string, col: number, delta: number): Record<string, T> {
+  const salida: Record<string, T> = {};
+  for (const [clave, valor] of Object.entries(mapa)) {
+    const corte = clave.lastIndexOf('!');
+    const hoja = corte < 0 ? '' : clave.slice(0, corte);
+    const ref = corte < 0 ? clave : clave.slice(corte + 1);
+    if (corte < 0 || hoja.trim().toUpperCase() !== hojaNombre.trim().toUpperCase()) {
+      salida[clave] = valor;
+      continue;
+    }
+    const match = /^([A-Z]+)(\d+)$/.exec(ref);
+    if (!match) {
+      salida[clave] = valor;
+      continue;
+    }
+    const c = indiceColumna(match[1]);
+    let nueva: number;
+    if (delta > 0) nueva = c >= col ? c + 1 : c;
+    else {
+      if (c === col) continue;
+      nueva = c > col ? c - 1 : c;
+    }
+    salida[`${hoja}!${letraColumna(nueva)}${match[2]}`] = valor;
+  }
+  return salida;
+}
+
+/** Desplaza los anchos de columna (claves por letra) al mover columnas. */
+function desplazarAnchos(cols: Record<string, number>, col: number, delta: number): Record<string, number> {
+  const salida: Record<string, number> = {};
+  for (const [letra, ancho] of Object.entries(cols)) {
+    const c = indiceColumna(letra);
+    if (c < 0) {
+      salida[letra] = ancho;
+      continue;
+    }
+    let nueva: number;
+    if (delta > 0) nueva = c >= col ? c + 1 : c;
+    else {
+      if (c === col) continue;
+      nueva = c > col ? c - 1 : c;
+    }
+    salida[letraColumna(nueva)] = ancho;
+  }
+  return salida;
+}
+
+/** Desplaza las letras de columnas ocultas al mover columnas. */
+function desplazarOcultas(ocultas: string[], col: number, delta: number): string[] {
+  const salida: string[] = [];
+  for (const letra of ocultas) {
+    const c = indiceColumna(letra);
+    if (c < 0) continue;
+    if (delta > 0) salida.push(letraColumna(c >= col ? c + 1 : c));
+    else if (c !== col) salida.push(letraColumna(c > col ? c - 1 : c));
+  }
+  return salida;
+}
+
+/** Una propiedad del override coincide con el Excel (tratando ausencia y false como iguales). */
+function igualAlBase(actual: EstiloLibro, base: EstiloLibro, llave: keyof EstiloLibro): boolean {
+  const a = actual[llave];
+  const b = base[llave];
+  if ((a === undefined || a === false) && (b === undefined || b === false)) return true;
+  return a === b;
 }
 
 /**

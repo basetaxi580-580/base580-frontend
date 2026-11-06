@@ -20,12 +20,14 @@ import {
   HojaLibro,
   LibroJson,
   MotorLibro,
+  OpLibro,
   altoFila,
   anchoColumna,
   columnasDeHoja,
   filasDeHoja,
   formatear,
   fusionarCapturas,
+  indiceColumna,
   mismasCapturas,
 } from './boletos-libro';
 
@@ -41,8 +43,10 @@ type CeldaVista = {
 type FilaVista = { n: number; alto: number; celdas: CeldaVista[] };
 type Vista = { cols: { letra: string; ancho: number }[]; filas: FilaVista[]; ancho: number };
 type Seleccion = { fila: number; col: number };
+type MenuCtx = { x: number; y: number; tipo: 'celda' | 'columna'; col: number };
 type EstadoGuardado = 'cargando' | 'guardado' | 'guardando' | 'pendiente' | 'error' | 'sin-conexion';
-type Respaldo = { base: Record<string, string>; actual: Record<string, string> };
+type Instantanea = { estructura: string; capturas: Record<string, string>; formatos: Record<string, string> };
+type Respaldo = { base: Instantanea; actual: Instantanea };
 
 const CLAVE_RESPALDO = 'boletos-libro-respaldo';
 const CLAVE_HOJA = 'boletos-libro-hoja';
@@ -64,6 +68,7 @@ const ANCHO_NUMEROS = 40;
         </div>
         <div class="acciones">
           <span class="estado" [class]="'estado ' + estado()" role="status">{{ textoEstado() }}</span>
+          <button type="button" class="guardar" title="Guardar (Ctrl+S)" [disabled]="!hayCambios()" (click)="guardarManual()">Guardar</button>
           <button type="button" title="Deshacer (Ctrl+Z)" aria-label="Deshacer" [disabled]="!puedeDeshacer()" (click)="deshacerCambio()">↶</button>
           <button type="button" title="Rehacer (Ctrl+Y)" aria-label="Rehacer" [disabled]="!puedeRehacer()" (click)="rehacerCambio()">↷</button>
           @if (confirmandoRestaurar()) {
@@ -90,14 +95,35 @@ const ANCHO_NUMEROS = 40;
             class="fx-input"
             aria-label="Contenido de la celda"
             [value]="textoBarra()"
-            [readOnly]="protegidaActiva()"
+            [readOnly]="protegidaActiva() && !apuntando()"
             (input)="escribirBarra($event)"
             (keydown)="teclaBarra($event)"
             (blur)="confirmarBarra()"
           />
-          @if (protegidaActiva()) {
+          @if (apuntando(); as a) {
+            <span class="apuntar">Apuntando a {{ a.hoja.trim() }}!{{ a.ref }} · Enter confirma, Esc cancela</span>
+          } @else if (protegidaActiva()) {
             <span class="candado" title="Celda con fórmula del Excel: se calcula sola">🔒 Fórmula</span>
           }
+        </div>
+
+        <div class="formato" role="toolbar" aria-label="Formato de celda">
+          <button type="button" [class.on]="fmtActivo('b')" (click)="alternar('b')" title="Negrita (Ctrl+B)" aria-label="Negrita"><b>N</b></button>
+          <button type="button" [class.on]="fmtActivo('i')" (click)="alternar('i')" title="Cursiva (Ctrl+I)" aria-label="Cursiva"><i>K</i></button>
+          <button type="button" [class.on]="fmtActivo('u')" (click)="alternar('u')" title="Subrayado (Ctrl+U)" aria-label="Subrayado"><u>S</u></button>
+          <select aria-label="Tamaño de letra" [value]="tamActual()" (change)="cambiarTam($event)">
+            @for (t of tamanos(); track t) {
+              <option [value]="t">{{ t }}</option>
+            }
+          </select>
+          <label class="color" title="Color de texto">A<input type="color" aria-label="Color de texto" [value]="colorTexto()" (input)="cambiarColor('fc', $event)" /></label>
+          <label class="color" title="Color de relleno">▦<input type="color" aria-label="Color de relleno" [value]="colorRelleno()" (input)="cambiarColor('bg', $event)" /></label>
+          <span class="sep"></span>
+          <button type="button" [class.on]="alineActual() === 'left'" (click)="alinear('left')" title="Alinear a la izquierda" aria-label="Izquierda">⟸</button>
+          <button type="button" [class.on]="alineActual() === 'center'" (click)="alinear('center')" title="Centrar" aria-label="Centro">≡</button>
+          <button type="button" [class.on]="alineActual() === 'right'" (click)="alinear('right')" title="Alinear a la derecha" aria-label="Derecha">⟹</button>
+          <span class="sep"></span>
+          <button type="button" (click)="limpiarFormatoActual()" title="Quitar el formato aplicado" aria-label="Quitar formato">Quitar formato</button>
         </div>
 
         <div
@@ -121,7 +147,7 @@ const ANCHO_NUMEROS = 40;
               <tr>
                 <th class="esquina"></th>
                 @for (c of v.cols; track c.letra; let ci = $index) {
-                  <th [class.activa]="ci === sel().col">{{ c.letra }}</th>
+                  <th [class.activa]="ci === sel().col" (contextmenu)="menuColumna(ci, $event)">{{ c.letra }}</th>
                 }
               </tr>
             </thead>
@@ -136,6 +162,7 @@ const ANCHO_NUMEROS = 40;
                       [style]="c.css"
                       (mousedown)="seleccionar(fi, ci, $event)"
                       (dblclick)="editarActual()"
+                      (contextmenu)="menuCelda(fi, ci, $event)"
                     >
                       @if (editando() !== null && fi === sel().fila && ci === sel().col) {
                         <input
@@ -164,7 +191,7 @@ const ANCHO_NUMEROS = 40;
 
         <nav class="pestanas" aria-label="Hojas del libro">
           @for (h of hojas(); track h.name) {
-            <button type="button" [class.activa]="h.name === hoja()?.name" [style.--tab]="h.tab" (click)="irAHoja(h.name)">
+            <button type="button" [class.activa]="h.name === hoja()?.name" [style.--tab]="h.tab" (mousedown)="tabMousedown($event)" (click)="irAHoja(h.name)">
               {{ h.name.trim() }}
             </button>
           }
@@ -175,6 +202,29 @@ const ANCHO_NUMEROS = 40;
 
       @if (aviso()) {
         <div class="aviso" role="status">{{ aviso() }}</div>
+      }
+
+      @if (menu(); as m) {
+        <div class="menu-fondo" (mousedown)="cerrarMenu()" (contextmenu)="$event.preventDefault(); cerrarMenu()"></div>
+        <div class="menu" role="menu" [style.left.px]="m.x" [style.top.px]="m.y" (mousedown)="$event.stopPropagation()">
+          @if (m.tipo === 'celda') {
+            <button type="button" role="menuitem" (click)="alternar('b'); cerrarMenu()"><b>N</b><span>Negrita</span></button>
+            <button type="button" role="menuitem" (click)="alternar('i'); cerrarMenu()"><i>K</i><span>Cursiva</span></button>
+            <button type="button" role="menuitem" (click)="alternar('u'); cerrarMenu()"><u>S</u><span>Subrayado</span></button>
+            <div class="menu-sep"></div>
+            <button type="button" role="menuitem" (click)="alinear('left'); cerrarMenu()"><span class="ic">⟸</span><span>Alinear a la izquierda</span></button>
+            <button type="button" role="menuitem" (click)="alinear('center'); cerrarMenu()"><span class="ic">≡</span><span>Centrar</span></button>
+            <button type="button" role="menuitem" (click)="alinear('right'); cerrarMenu()"><span class="ic">⟹</span><span>Alinear a la derecha</span></button>
+            <div class="menu-sep"></div>
+            <button type="button" role="menuitem" (click)="limpiarFormatoActual(); cerrarMenu()"><span class="ic">⌫</span><span>Quitar formato</span></button>
+            <button type="button" role="menuitem" (click)="borrarCelda(); cerrarMenu()"><span class="ic">⌦</span><span>Borrar contenido</span></button>
+          } @else {
+            <button type="button" role="menuitem" (click)="insertarColumna('izq')"><span class="ic">▮</span><span>Insertar columna a la izquierda</span></button>
+            <button type="button" role="menuitem" (click)="insertarColumna('der')"><span class="ic">▮</span><span>Insertar columna a la derecha</span></button>
+            <div class="menu-sep"></div>
+            <button type="button" role="menuitem" (click)="eliminarColumna()"><span class="ic">✕</span><span>Eliminar columna</span></button>
+          }
+        </div>
       }
     </section>
   `,
@@ -188,6 +238,8 @@ const ANCHO_NUMEROS = 40;
     .acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
     .acciones button, .acciones a { border: 1px solid rgba(124, 58, 237, 0.25); background: #fff; color: #7c3aed; border-radius: 10px; padding: 6px 10px; font-weight: 700; font-size: 0.85rem; text-decoration: none; cursor: pointer; }
     .acciones button:disabled { opacity: 0.45; cursor: default; }
+    .acciones .guardar { background: #217346; border-color: #217346; color: #fff; }
+    .acciones .guardar:disabled { background: #fff; color: #217346; }
     .acciones .peligro { background: #b91c1c; border-color: #b91c1c; color: #fff; }
     .confirmar { font-size: 0.85rem; color: #3a214e; }
     .estado { font-size: 0.8rem; padding: 4px 10px; border-radius: 999px; background: #ede9fe; color: #5b21b6; }
@@ -198,6 +250,15 @@ const ANCHO_NUMEROS = 40;
     .fx-ico { font-style: italic; color: #6b7280; }
     .fx-input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font: 14px Calibri, Carlito, Arial, sans-serif; }
     .candado { white-space: nowrap; font-size: 0.75rem; color: #92400e; background: #fef3c7; border-radius: 6px; padding: 2px 6px; }
+    .apuntar { white-space: nowrap; font-size: 0.75rem; color: #0f5132; background: #d3e9dc; border-radius: 6px; padding: 2px 8px; }
+    .formato { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; border: 1px solid #d4d4d4; background: #fff; border-radius: 8px; padding: 4px 6px; }
+    .formato button { min-width: 30px; height: 28px; border: 1px solid transparent; background: transparent; color: #333; border-radius: 6px; cursor: pointer; font-size: 0.9rem; line-height: 1; padding: 0 6px; }
+    .formato button:hover { background: #f3f0fa; }
+    .formato button.on { background: #ede9fe; border-color: #7c3aed; color: #5b21b6; }
+    .formato select { height: 28px; border: 1px solid #d4d4d4; border-radius: 6px; background: #fff; font-size: 0.85rem; }
+    .formato .color { display: inline-flex; align-items: center; gap: 2px; height: 28px; padding: 0 4px; border: 1px solid #d4d4d4; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+    .formato .color input { width: 22px; height: 20px; border: 0; background: transparent; padding: 0; cursor: pointer; }
+    .formato .sep { width: 1px; align-self: stretch; background: #e5e5e5; margin: 2px; }
     .rejilla { overflow: auto; max-height: calc(100vh - 250px); min-height: 320px; border: 1px solid #d4d4d4; background: #fff; outline: none; }
     .rejilla:focus-visible { box-shadow: 0 0 0 2px rgba(33, 115, 70, 0.35); }
     table { border-collapse: separate; border-spacing: 0; table-layout: fixed; font: 11pt Calibri, Carlito, Arial, sans-serif; color: #000; }
@@ -218,6 +279,12 @@ const ANCHO_NUMEROS = 40;
     .pestanas button { flex: 0 0 auto; white-space: nowrap; cursor: pointer; padding: 6px 12px; border: 1px solid #d4d4d4; border-top: 3px solid var(--tab, #d4d4d4); border-radius: 0 0 6px 6px; background: #f3f3f3; color: #333; font: 600 13px Calibri, Carlito, Arial, sans-serif; }
     .pestanas button.activa { background: #fff; color: #217346; box-shadow: inset 0 -2px 0 #217346; }
     .aviso { position: fixed; right: 20px; bottom: 20px; z-index: 50; max-width: 340px; padding: 10px 14px; border-radius: 12px; background: #3a214e; color: #fff; font-size: 0.9rem; }
+    .menu-fondo { position: fixed; inset: 0; z-index: 60; }
+    .menu { position: fixed; z-index: 61; min-width: 200px; padding: 4px; background: #fff; border: 1px solid #d4d4d4; border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); display: flex; flex-direction: column; }
+    .menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 10px; border: 0; background: transparent; border-radius: 6px; cursor: pointer; font: 500 0.85rem Calibri, Carlito, Arial, sans-serif; color: #333; text-align: left; }
+    .menu button:hover { background: #f3f0fa; color: #5b21b6; }
+    .menu button .ic, .menu button b, .menu button i, .menu button u { display: inline-block; width: 18px; text-align: center; color: #7c3aed; font-style: normal; text-decoration: none; }
+    .menu-sep { height: 1px; background: #e5e5e5; margin: 4px 2px; }
     .error { color: #991b1b; }
     .cargando { color: #7c3aed; }
   `,
@@ -229,6 +296,7 @@ export class BoletosLibroPage implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly rejilla = viewChild<ElementRef<HTMLDivElement>>('rejilla');
   private readonly editor = viewChild<ElementRef<HTMLInputElement>>('editor');
+  private readonly barra = viewChild<ElementRef<HTMLInputElement>>('barra');
 
   protected readonly motor = signal<MotorLibro | null>(null);
   protected readonly hojaNombre = signal('');
@@ -237,6 +305,10 @@ export class BoletosLibroPage implements OnInit {
   protected readonly sel = signal<Seleccion>({ fila: 0, col: 0 });
   /** Texto del editor en celda; null cuando no se edita. */
   protected readonly editando = signal<string | null>(null);
+  /** Menú contextual abierto (click derecho); null cuando está cerrado. */
+  protected readonly menu = signal<MenuCtx | null>(null);
+  /** Modo apuntar entre pestañas: fórmula en curso anclada a una celda mientras se ven otras hojas. */
+  protected readonly apuntando = signal<{ hoja: string; ref: string; texto: string } | null>(null);
   protected readonly estado = signal<EstadoGuardado>('cargando');
   protected readonly actualizado = signal<string | null>(null);
   protected readonly aviso = signal('');
@@ -272,6 +344,8 @@ export class BoletosLibroPage implements OnInit {
   });
   protected readonly textoBarra = computed(() => {
     this.cambios();
+    const apuntando = this.apuntando();
+    if (apuntando) return apuntando.texto;
     const editando = this.editando();
     if (editando !== null) return editando;
     const motor = this.motor();
@@ -284,10 +358,39 @@ export class BoletosLibroPage implements OnInit {
     const hoja = this.hoja();
     const motor = this.motor();
     if (!hoja || !motor) return false;
-    return Object.keys(motor.capturas()).some((clave) => clave.startsWith(`${hoja.name}!`));
+    const prefijo = `${hoja.name}!`;
+    return (
+      Object.keys(motor.capturas()).some((clave) => clave.startsWith(prefijo)) ||
+      Object.keys(motor.formatos()).some((clave) => clave.startsWith(prefijo))
+    );
   });
   protected readonly puedeDeshacer = computed(() => this.historial().deshacer > 0);
   protected readonly puedeRehacer = computed(() => this.historial().rehacer > 0);
+  /** Hay cambios sin guardar (habilita el botón Guardar). */
+  protected readonly hayCambios = computed(() => {
+    this.cambios();
+    const motor = this.motor();
+    if (!motor) return false;
+    return (
+      !mismasCapturas(motor.capturas(), this.base) ||
+      !mismasCapturas(this.serializarFormatos(motor.formatos()), this.baseFormatos) ||
+      JSON.stringify(motor.estructura()) !== this.baseEstructura
+    );
+  });
+  /** Estilo efectivo de la celda activa (para pintar la barra de formato). */
+  protected readonly estiloActivo = computed<EstiloLibro>(() => {
+    this.cambios();
+    const motor = this.motor();
+    const hoja = this.hoja();
+    const ref = this.refActiva();
+    return motor && hoja && ref ? motor.estilo(hoja.name, ref) : {};
+  });
+  private readonly TAMANOS_BASE = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 36];
+  protected readonly tamanos = computed<number[]>(() => {
+    const juego = new Set(this.TAMANOS_BASE);
+    juego.add(this.estiloActivo().sz ?? 11);
+    return [...juego].sort((a, b) => a - b);
+  });
   protected readonly textoEstado = computed(() => {
     switch (this.estado()) {
       case 'cargando':
@@ -308,13 +411,17 @@ export class BoletosLibroPage implements OnInit {
   private version: number | null = null;
   /** Últimas capturas confirmadas por el servidor. */
   private base: Record<string, string> = {};
+  /** Últimos formatos confirmados por el servidor (clave `Hoja!A1` -> JSON). */
+  private baseFormatos: Record<string, string> = {};
+  /** Última estructura (operaciones de columna) confirmada por el servidor, como JSON. */
+  private baseEstructura = '[]';
   private guardando = false;
   private repetir = false;
   private conflictos = 0;
   private timerGuardado: ReturnType<typeof setTimeout> | null = null;
   private timerAviso: ReturnType<typeof setTimeout> | null = null;
-  private pilaDeshacer: Record<string, string>[] = [];
-  private pilaRehacer: Record<string, string>[] = [];
+  private pilaDeshacer: Instantanea[] = [];
+  private pilaRehacer: Instantanea[] = [];
   private bufferBarra: string | null = null;
   /** Celda que se está editando en la barra de fórmulas (se fija al teclear). */
   private objetivoBarra: { hoja: string; ref: string } | null = null;
@@ -360,30 +467,241 @@ export class BoletosLibroPage implements OnInit {
     this.sondear();
   }
 
+  @HostListener('document:keydown.escape')
+  protected cerrarMenuEsc(): void {
+    this.cerrarMenu();
+  }
+
   @HostListener('window:beforeunload', ['$event'])
   protected antesDeSalir(event: BeforeUnloadEvent): void {
     const motor = this.motor();
-    if (motor && !mismasCapturas(motor.capturas(), this.base)) event.preventDefault();
+    if (!motor) return;
+    if (
+      !mismasCapturas(motor.capturas(), this.base) ||
+      !mismasCapturas(this.serializarFormatos(motor.formatos()), this.baseFormatos) ||
+      JSON.stringify(motor.estructura()) !== this.baseEstructura
+    ) {
+      event.preventDefault();
+    }
   }
 
   protected irAHoja(nombre: string): void {
-    this.confirmarEdicion();
-    this.confirmarBarra();
+    if (this.editandoFormula()) {
+      this.promoverAApuntar();
+    } else {
+      this.confirmarEdicion();
+      this.confirmarBarra();
+    }
+    const apuntando = this.apuntando() !== null;
     this.hojaNombre.set(nombre);
-    this.sel.set({ fila: 0, col: 0 });
+    if (!apuntando) this.sel.set({ fila: 0, col: 0 });
     this.confirmandoRestaurar.set(false);
+    this.cerrarMenu();
     escribirLocal(CLAVE_HOJA, nombre);
     void this.router.navigate([], { relativeTo: this.route, queryParams: { hoja: nombre.trim() }, replaceUrl: true });
-    this.enfocarRejilla();
+    if (apuntando) this.enfocarBarra();
+    else this.enfocarRejilla();
+  }
+
+  protected tabMousedown(event: MouseEvent): void {
+    // Al cambiar de pestaña escribiendo una fórmula, no se pierde el foco ni se confirma.
+    if (this.editandoFormula()) event.preventDefault();
+  }
+
+  private editandoFormula(): boolean {
+    if (this.apuntando() !== null) return true;
+    const enCelda = this.editando();
+    if (enCelda !== null && enCelda.trimStart().startsWith('=')) return true;
+    if (this.bufferBarra !== null && this.bufferBarra.trimStart().startsWith('=')) return true;
+    return false;
+  }
+
+  private promoverAApuntar(): void {
+    if (this.apuntando() !== null) return;
+    const enCelda = this.editando();
+    if (enCelda !== null && enCelda.trimStart().startsWith('=') && this.objetivo) {
+      this.apuntando.set({ hoja: this.objetivo.hoja, ref: this.objetivo.ref, texto: enCelda });
+      this.editando.set(null);
+      this.objetivo = null;
+      return;
+    }
+    if (this.bufferBarra !== null && this.bufferBarra.trimStart().startsWith('=') && this.objetivoBarra) {
+      this.apuntando.set({ hoja: this.objetivoBarra.hoja, ref: this.objetivoBarra.ref, texto: this.bufferBarra });
+      this.bufferBarra = null;
+      this.objetivoBarra = null;
+    }
+  }
+
+  private confirmarApuntar(): void {
+    const ap = this.apuntando();
+    this.apuntando.set(null);
+    if (!ap) return;
+    this.aplicar([{ hoja: ap.hoja, ref: ap.ref, texto: ap.texto }]);
+    this.volverAOrigen(ap.hoja, ap.ref);
+  }
+
+  private cancelarApuntar(): void {
+    const ap = this.apuntando();
+    this.apuntando.set(null);
+    if (ap) this.volverAOrigen(ap.hoja, ap.ref);
+  }
+
+  private volverAOrigen(hoja: string, ref: string): void {
+    this.hojaNombre.set(hoja);
+    escribirLocal(CLAVE_HOJA, hoja);
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { hoja: hoja.trim() }, replaceUrl: true });
+    setTimeout(() => {
+      this.seleccionarRef(ref);
+      this.enfocarRejilla();
+    });
+  }
+
+  private seleccionarRef(ref: string): void {
+    const vista = this.vista();
+    const match = /^([A-Z]+)(\d+)$/.exec(ref);
+    if (!vista || !match) return;
+    const col = vista.cols.findIndex((c) => c.letra === match[1]);
+    const fila = vista.filas.findIndex((f) => f.n === Number(match[2]));
+    if (col >= 0 && fila >= 0) this.sel.set({ fila, col });
+  }
+
+  private enfocarBarra(): void {
+    setTimeout(() => this.barra()?.nativeElement.focus({ preventScroll: true }));
   }
 
   protected seleccionar(fila: number, col: number, event: MouseEvent): void {
     if (event.button !== 0) return;
+    // Modo apuntar: si se edita una fórmula, el clic inserta la referencia en vez de confirmar.
+    if (this.insertarReferencia(fila, col, event)) return;
     if (this.editando() !== null && fila === this.sel().fila && col === this.sel().col) return;
     // Confirmar antes de mover la selección: el blur del editor llega después del mousedown.
     this.confirmarEdicion();
     this.confirmarBarra();
     this.sel.set({ fila, col });
+  }
+
+  /** Inserta la referencia de la celda clicada dentro de la fórmula en edición (como Excel). */
+  private insertarReferencia(fila: number, col: number, event: MouseEvent): boolean {
+    const vista = this.vista();
+    if (!vista) return false;
+    const columna = vista.cols[col];
+    const renglon = vista.filas[fila];
+    if (!columna || !renglon) return false;
+
+    const ap = this.apuntando();
+    if (ap) {
+      event.preventDefault();
+      const actual = this.hoja();
+      const refApunta =
+        actual && actual.name !== ap.hoja
+          ? `'${actual.name.replace(/'/g, "''")}'!${columna.letra}${renglon.n}`
+          : `${columna.letra}${renglon.n}`;
+      const nuevo = insertarRefEnFormula(ap.texto, refApunta);
+      if (nuevo !== null) {
+        this.apuntando.set({ ...ap, texto: nuevo });
+        const input = this.barra()?.nativeElement;
+        if (input) {
+          input.value = nuevo;
+          input.focus();
+          input.setSelectionRange(nuevo.length, nuevo.length);
+        }
+      }
+      return true;
+    }
+
+    if (fila === this.sel().fila && col === this.sel().col) return false;
+    const ref = `${columna.letra}${renglon.n}`;
+
+    const enCelda = this.editando();
+    if (enCelda !== null && enCelda.trimStart().startsWith('=')) {
+      const nuevo = insertarRefEnFormula(enCelda, ref);
+      if (nuevo === null) return false;
+      event.preventDefault();
+      this.editando.set(nuevo);
+      setTimeout(() => {
+        const input = this.editor()?.nativeElement;
+        if (!input) return;
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      });
+      return true;
+    }
+
+    if (this.bufferBarra !== null && this.bufferBarra.trimStart().startsWith('=')) {
+      const nuevo = insertarRefEnFormula(this.bufferBarra, ref);
+      if (nuevo === null) return false;
+      event.preventDefault();
+      this.bufferBarra = nuevo;
+      const input = this.barra()?.nativeElement;
+      if (input) {
+        input.value = nuevo;
+        input.focus();
+        input.setSelectionRange(nuevo.length, nuevo.length);
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  protected menuCelda(fila: number, col: number, event: MouseEvent): void {
+    event.preventDefault();
+    this.confirmarEdicion();
+    this.confirmarBarra();
+    this.sel.set({ fila, col });
+    const x = Math.max(4, Math.min(event.clientX, window.innerWidth - 212));
+    this.menu.set({ x, y: event.clientY, tipo: 'celda', col });
+  }
+
+  protected cerrarMenu(): void {
+    if (this.menu()) this.menu.set(null);
+  }
+
+  protected borrarCelda(): void {
+    this.borrarActual();
+  }
+
+  protected menuColumna(ci: number, event: MouseEvent): void {
+    event.preventDefault();
+    const vista = this.vista();
+    const letra = vista?.cols[ci]?.letra;
+    if (!letra) return;
+    this.confirmarEdicion();
+    this.confirmarBarra();
+    this.sel.update((s) => ({ fila: s.fila, col: ci }));
+    const x = Math.max(4, Math.min(event.clientX, window.innerWidth - 252));
+    this.menu.set({ x, y: event.clientY, tipo: 'columna', col: indiceColumna(letra) });
+  }
+
+  protected insertarColumna(lado: 'izq' | 'der'): void {
+    const motor = this.motor();
+    const hoja = this.hoja();
+    const menu = this.menu();
+    this.cerrarMenu();
+    if (!motor || !hoja || !menu) return;
+    const col = lado === 'izq' ? menu.col : menu.col + 1;
+    const antes = this.instantanea();
+    if (!motor.insertarColumna(hoja.name, col)) return;
+    this.registrarDeshacer(antes);
+    this.trasCambio();
+    this.avisar(`Columna insertada en ${hoja.name.trim()}.`);
+  }
+
+  protected eliminarColumna(): void {
+    const motor = this.motor();
+    const hoja = this.hoja();
+    const menu = this.menu();
+    this.cerrarMenu();
+    if (!motor || !hoja || !menu) return;
+    const antes = this.instantanea();
+    const resultado = motor.eliminarColumna(hoja.name, menu.col);
+    if (!resultado.ok) {
+      this.avisar(resultado.motivo ?? 'No se pudo eliminar la columna.');
+      return;
+    }
+    this.registrarDeshacer(antes);
+    this.trasCambio();
+    this.avisar(`Columna eliminada en ${hoja.name.trim()}.`);
   }
 
   protected editarActual(inicial?: string): void {
@@ -444,13 +762,29 @@ export class BoletosLibroPage implements OnInit {
   }
 
   protected escribirBarra(event: Event): void {
-    this.bufferBarra = (event.target as HTMLInputElement).value;
+    const valor = (event.target as HTMLInputElement).value;
+    const ap = this.apuntando();
+    if (ap) {
+      this.apuntando.set({ ...ap, texto: valor });
+      return;
+    }
+    this.bufferBarra = valor;
     const hoja = this.hoja();
     const ref = this.refActiva();
     if (!this.objetivoBarra && hoja && ref) this.objetivoBarra = { hoja: hoja.name, ref };
   }
 
   protected teclaBarra(event: KeyboardEvent): void {
+    if (this.apuntando() !== null) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        this.confirmarApuntar();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        this.cancelarApuntar();
+      }
+      return;
+    }
     if (event.key === 'Enter') {
       event.preventDefault();
       this.confirmarBarra();
@@ -465,6 +799,7 @@ export class BoletosLibroPage implements OnInit {
   }
 
   protected confirmarBarra(): void {
+    if (this.apuntando() !== null) return;
     const texto = this.bufferBarra;
     const objetivo = this.objetivoBarra;
     this.bufferBarra = null;
@@ -491,6 +826,11 @@ export class BoletosLibroPage implements OnInit {
       return;
     }
     const tecla = event.key.toLowerCase();
+    if (ctrl && tecla === 's') {
+      event.preventDefault();
+      this.guardarManual();
+      return;
+    }
     if (ctrl && tecla === 'z') {
       event.preventDefault();
       if (event.shiftKey) this.rehacerCambio();
@@ -500,6 +840,11 @@ export class BoletosLibroPage implements OnInit {
     if (ctrl && tecla === 'y') {
       event.preventDefault();
       this.rehacerCambio();
+      return;
+    }
+    if (ctrl && (tecla === 'b' || tecla === 'i' || tecla === 'u')) {
+      event.preventDefault();
+      this.alternar(tecla as 'b' | 'i' | 'u');
       return;
     }
     if (ctrl || event.altKey) return;
@@ -578,8 +923,8 @@ export class BoletosLibroPage implements OnInit {
     const motor = this.motor();
     const previo = this.pilaDeshacer.pop();
     if (!motor || !previo) return;
-    this.pilaRehacer.push(motor.capturas());
-    motor.reemplazarCapturas(previo);
+    this.pilaRehacer.push(this.instantanea());
+    this.restaurarInstantanea(previo);
     this.trasCambio();
   }
 
@@ -587,8 +932,8 @@ export class BoletosLibroPage implements OnInit {
     const motor = this.motor();
     const siguiente = this.pilaRehacer.pop();
     if (!motor || !siguiente) return;
-    this.pilaDeshacer.push(motor.capturas());
-    motor.reemplazarCapturas(siguiente);
+    this.pilaDeshacer.push(this.instantanea());
+    this.restaurarInstantanea(siguiente);
     this.trasCambio();
   }
 
@@ -597,13 +942,130 @@ export class BoletosLibroPage implements OnInit {
     const motor = this.motor();
     const hoja = this.hoja();
     if (!motor || !hoja) return;
-    const antes = motor.capturas();
-    const despues = Object.fromEntries(Object.entries(antes).filter(([clave]) => !clave.startsWith(`${hoja.name}!`)));
-    if (mismasCapturas(antes, despues)) return;
+    const prefijo = `${hoja.name}!`;
+    const sinHoja = (m: Record<string, string>) => Object.fromEntries(Object.entries(m).filter(([clave]) => !clave.startsWith(prefijo)));
+    const antes = this.instantanea();
+    const despues: Instantanea = { estructura: antes.estructura, capturas: sinHoja(antes.capturas), formatos: sinHoja(antes.formatos) };
+    if (this.mismasInstantaneas(antes, despues)) return;
     this.registrarDeshacer(antes);
-    motor.reemplazarCapturas(despues);
+    this.restaurarInstantanea(despues);
     this.trasCambio();
     this.avisar(`${hoja.name.trim()} quedó como en el Excel original.`);
+  }
+
+  protected fmtActivo(llave: 'b' | 'i' | 'u'): boolean {
+    return !!this.estiloActivo()[llave];
+  }
+
+  protected tamActual(): number {
+    return this.estiloActivo().sz ?? 11;
+  }
+
+  protected colorTexto(): string {
+    return this.estiloActivo().fc ?? '#000000';
+  }
+
+  protected colorRelleno(): string {
+    return this.estiloActivo().bg ?? '#FFFFFF';
+  }
+
+  protected alineActual(): string {
+    return this.estiloActivo().ha ?? '';
+  }
+
+  protected alternar(llave: 'b' | 'i' | 'u'): void {
+    const cambio: Partial<EstiloLibro> = {};
+    cambio[llave] = !this.estiloActivo()[llave];
+    this.aplicarFormato(cambio);
+  }
+
+  protected cambiarTam(event: Event): void {
+    const sz = Number((event.target as HTMLSelectElement).value) || 11;
+    this.aplicarFormato({ sz });
+  }
+
+  protected cambiarColor(prop: 'fc' | 'bg', event: Event): void {
+    const valor = (event.target as HTMLInputElement).value.toUpperCase();
+    const cambio: Partial<EstiloLibro> = {};
+    cambio[prop] = valor;
+    this.aplicarFormato(cambio);
+  }
+
+  protected alinear(ha: 'left' | 'center' | 'right'): void {
+    this.aplicarFormato({ ha: this.alineActual() === ha ? '' : ha });
+  }
+
+  protected limpiarFormatoActual(): void {
+    const motor = this.motor();
+    const hoja = this.hoja();
+    const ref = this.refActiva();
+    if (!motor || !hoja || !ref) return;
+    const antes = this.instantanea();
+    motor.limpiarFormato(hoja.name, ref);
+    if (this.mismasInstantaneas(antes, this.instantanea())) return;
+    this.registrarDeshacer(antes);
+    this.trasCambio();
+  }
+
+  private aplicarFormato(cambio: Partial<EstiloLibro>): void {
+    const motor = this.motor();
+    const hoja = this.hoja();
+    const ref = this.refActiva();
+    if (!motor || !hoja || !ref) return;
+    const antes = this.instantanea();
+    motor.establecerFormato(hoja.name, ref, cambio);
+    if (this.mismasInstantaneas(antes, this.instantanea())) return;
+    this.registrarDeshacer(antes);
+    this.trasCambio();
+  }
+
+  private instantanea(): Instantanea {
+    const motor = this.motor();
+    return {
+      estructura: motor ? JSON.stringify(motor.estructura()) : '[]',
+      capturas: motor ? motor.capturas() : {},
+      formatos: motor ? this.serializarFormatos(motor.formatos()) : {},
+    };
+  }
+
+  private restaurarInstantanea(inst: Instantanea): void {
+    const motor = this.motor();
+    if (!motor) return;
+    motor.aplicarEstructura(this.parsearEstructura(inst.estructura));
+    motor.reemplazarCapturas(inst.capturas);
+    motor.reemplazarFormatos(this.parsearFormatos(inst.formatos));
+  }
+
+  private mismasInstantaneas(a: Instantanea, b: Instantanea): boolean {
+    return a.estructura === b.estructura && mismasCapturas(a.capturas, b.capturas) && mismasCapturas(a.formatos, b.formatos);
+  }
+
+  private serializarFormatos(formatos: Record<string, EstiloLibro>): Record<string, string> {
+    const r: Record<string, string> = {};
+    for (const [clave, estilo] of Object.entries(formatos)) r[clave] = JSON.stringify(estilo);
+    return r;
+  }
+
+  private parsearFormatos(formatos: Record<string, string>): Record<string, EstiloLibro> {
+    const r: Record<string, EstiloLibro> = {};
+    for (const [clave, texto] of Object.entries(formatos)) {
+      try {
+        const estilo = JSON.parse(texto) as EstiloLibro;
+        if (estilo && typeof estilo === 'object') r[clave] = estilo;
+      } catch {
+        // Formato ilegible: se ignora.
+      }
+    }
+    return r;
+  }
+
+  private parsearEstructura(texto: string): OpLibro[] {
+    try {
+      const ops = JSON.parse(texto || '[]') as OpLibro[];
+      return Array.isArray(ops) ? ops : [];
+    } catch {
+      return [];
+    }
   }
 
   private borrarActual(): void {
@@ -622,18 +1084,18 @@ export class BoletosLibroPage implements OnInit {
   private aplicar(cambios: { hoja: string; ref: string; texto: string }[]): void {
     const motor = this.motor();
     if (!motor) return;
-    const antes = motor.capturas();
+    const antes = this.instantanea();
     for (const cambio of cambios) {
       if (motor.protegida(cambio.hoja, cambio.ref)) continue;
       if (motor.textoEdicion(cambio.hoja, cambio.ref) === cambio.texto) continue;
       motor.establecer(cambio.hoja, cambio.ref, cambio.texto);
     }
-    if (mismasCapturas(antes, motor.capturas())) return;
+    if (mismasCapturas(antes.capturas, motor.capturas())) return;
     this.registrarDeshacer(antes);
     this.trasCambio();
   }
 
-  private registrarDeshacer(antes: Record<string, string>): void {
+  private registrarDeshacer(antes: Instantanea): void {
     this.pilaDeshacer.push(antes);
     if (this.pilaDeshacer.length > MAX_HISTORIAL) this.pilaDeshacer.shift();
     this.pilaRehacer = [];
@@ -643,7 +1105,7 @@ export class BoletosLibroPage implements OnInit {
     this.cambios.update((n) => n + 1);
     this.historial.set({ deshacer: this.pilaDeshacer.length, rehacer: this.pilaRehacer.length });
     this.respaldar();
-    this.programarGuardado();
+    this.marcarPendiente();
   }
 
   private mover(deltaFila: number, deltaCol: number): void {
@@ -676,12 +1138,26 @@ export class BoletosLibroPage implements OnInit {
         const respaldo = leerRespaldo();
         const motor = this.motor();
         if (respaldo && motor) {
-          const combinadas = fusionarCapturas(estado.capturas, respaldo.base, respaldo.actual);
-          if (!mismasCapturas(combinadas, estado.capturas)) {
-            motor.reemplazarCapturas(combinadas);
+          const serverE = estado.estructura ?? '[]';
+          const mismaEstructura = respaldo.base.estructura === serverE && respaldo.actual.estructura === serverE;
+          if (mismaEstructura) {
+            const capturas = fusionarCapturas(estado.capturas, respaldo.base.capturas, respaldo.actual.capturas);
+            const formatos = fusionarCapturas(estado.formatos ?? {}, respaldo.base.formatos, respaldo.actual.formatos);
+            if (!mismasCapturas(capturas, estado.capturas) || !mismasCapturas(formatos, estado.formatos ?? {})) {
+              motor.reemplazarCapturas(capturas);
+              motor.reemplazarFormatos(this.parsearFormatos(formatos));
+              this.cambios.update((n) => n + 1);
+              this.avisar('Se recuperaron cambios que no se habían guardado.');
+              this.marcarPendiente();
+              return;
+            }
+          } else {
+            motor.aplicarEstructura(this.parsearEstructura(respaldo.actual.estructura));
+            motor.reemplazarCapturas(respaldo.actual.capturas);
+            motor.reemplazarFormatos(this.parsearFormatos(respaldo.actual.formatos));
             this.cambios.update((n) => n + 1);
-            this.avisar('Se recuperaron cambios que no se habían guardado.');
-            this.programarGuardado();
+            this.avisar('Se recuperaron cambios que no se habían guardado (incluye columnas).');
+            this.marcarPendiente();
             return;
           }
           borrarRespaldo();
@@ -694,8 +1170,12 @@ export class BoletosLibroPage implements OnInit {
         const respaldo = leerRespaldo();
         const motor = this.motor();
         if (respaldo && motor) {
-          motor.reemplazarCapturas(respaldo.actual);
-          this.base = respaldo.base;
+          motor.aplicarEstructura(this.parsearEstructura(respaldo.actual.estructura));
+          motor.reemplazarCapturas(respaldo.actual.capturas);
+          motor.reemplazarFormatos(this.parsearFormatos(respaldo.actual.formatos));
+          this.base = respaldo.base.capturas;
+          this.baseFormatos = respaldo.base.formatos;
+          this.baseEstructura = respaldo.base.estructura;
           this.cambios.update((n) => n + 1);
         }
         this.timerGuardado = setTimeout(() => this.cargarEstado(), 10000);
@@ -707,15 +1187,22 @@ export class BoletosLibroPage implements OnInit {
   private adoptar(estado: EstadoLibro): void {
     this.version = estado.version;
     this.base = { ...(estado.capturas ?? {}) };
+    this.baseFormatos = { ...(estado.formatos ?? {}) };
+    this.baseEstructura = estado.estructura ?? '[]';
     this.actualizado.set(estado.actualizado);
-    this.motor()?.reemplazarCapturas(this.base);
+    const motor = this.motor();
+    motor?.aplicarEstructura(this.parsearEstructura(this.baseEstructura));
+    motor?.reemplazarCapturas(this.base);
+    motor?.reemplazarFormatos(this.parsearFormatos(this.baseFormatos));
     this.cambios.update((n) => n + 1);
   }
 
-  private programarGuardado(): void {
+  private marcarPendiente(): void {
     if (this.estado() !== 'sin-conexion') this.estado.set('pendiente');
-    if (this.timerGuardado) clearTimeout(this.timerGuardado);
-    this.timerGuardado = setTimeout(() => this.guardar(), 800);
+  }
+
+  protected guardarManual(): void {
+    this.guardar();
   }
 
   private guardar(): void {
@@ -726,21 +1213,36 @@ export class BoletosLibroPage implements OnInit {
       return;
     }
     const capturas = motor.capturas();
-    if (mismasCapturas(capturas, this.base) && this.version !== null) {
+    const formatos = this.serializarFormatos(motor.formatos());
+    const estructura = JSON.stringify(motor.estructura());
+    if (
+      mismasCapturas(capturas, this.base) &&
+      mismasCapturas(formatos, this.baseFormatos) &&
+      estructura === this.baseEstructura &&
+      this.version !== null
+    ) {
       this.estado.set('guardado');
       borrarRespaldo();
       return;
     }
     this.guardando = true;
     this.estado.set('guardando');
-    this.api.guardar(capturas, this.version).subscribe({
+    this.api.guardar(capturas, formatos, estructura, this.version).subscribe({
       next: (estado) => {
         this.guardando = false;
         this.conflictos = 0;
         this.version = estado.version;
         this.base = { ...(estado.capturas ?? {}) };
+        this.baseFormatos = { ...(estado.formatos ?? {}) };
+        this.baseEstructura = estado.estructura ?? '[]';
         this.actualizado.set(estado.actualizado);
-        if (this.repetir || !mismasCapturas(motor.capturas(), this.base)) {
+        this.cambios.update((n) => n + 1);
+        const pendiente =
+          this.repetir ||
+          !mismasCapturas(motor.capturas(), this.base) ||
+          !mismasCapturas(this.serializarFormatos(motor.formatos()), this.baseFormatos) ||
+          JSON.stringify(motor.estructura()) !== this.baseEstructura;
+        if (pendiente) {
           this.repetir = false;
           this.guardar();
           return;
@@ -753,17 +1255,35 @@ export class BoletosLibroPage implements OnInit {
         const conflicto = error.status === 409 ? (error.error as ConflictoLibro | null)?.actual : null;
         if (conflicto && this.conflictos < MAX_CONFLICTOS) {
           this.conflictos++;
-          const combinadas = fusionarCapturas(conflicto.capturas ?? {}, this.base, motor.capturas());
+          const serverE = conflicto.estructura ?? '[]';
+          if (serverE !== this.baseEstructura || serverE !== JSON.stringify(motor.estructura())) {
+            // Divergencia de columnas: se adopta la estructura del servidor para no corromper el libro.
+            this.version = conflicto.version;
+            this.base = { ...(conflicto.capturas ?? {}) };
+            this.baseFormatos = { ...(conflicto.formatos ?? {}) };
+            this.baseEstructura = serverE;
+            motor.aplicarEstructura(this.parsearEstructura(serverE));
+            motor.reemplazarCapturas(this.base);
+            motor.reemplazarFormatos(this.parsearFormatos(this.baseFormatos));
+            this.cambios.update((n) => n + 1);
+            this.avisar('Otro equipo cambió las columnas: se adoptó su versión del libro.');
+            this.estado.set('guardado');
+            borrarRespaldo();
+            return;
+          }
+          const capturasComb = fusionarCapturas(conflicto.capturas ?? {}, this.base, motor.capturas());
+          const formatosComb = fusionarCapturas(conflicto.formatos ?? {}, this.baseFormatos, this.serializarFormatos(motor.formatos()));
           this.version = conflicto.version;
           this.base = { ...(conflicto.capturas ?? {}) };
-          motor.reemplazarCapturas(combinadas);
+          this.baseFormatos = { ...(conflicto.formatos ?? {}) };
+          motor.reemplazarCapturas(capturasComb);
+          motor.reemplazarFormatos(this.parsearFormatos(formatosComb));
           this.cambios.update((n) => n + 1);
           this.avisar('Otro equipo guardó cambios: se combinaron con los tuyos.');
           this.guardar();
           return;
         }
         this.estado.set(error.status === 0 ? 'sin-conexion' : 'error');
-        this.timerGuardado = setTimeout(() => this.guardar(), 5000);
       },
     });
   }
@@ -772,10 +1292,19 @@ export class BoletosLibroPage implements OnInit {
   private sondear(): void {
     const motor = this.motor();
     if (!motor || this.guardando || this.editando() !== null) return;
-    if (this.estado() === 'cargando' || !mismasCapturas(motor.capturas(), this.base)) return;
+    const sinCambios =
+      mismasCapturas(motor.capturas(), this.base) &&
+      mismasCapturas(this.serializarFormatos(motor.formatos()), this.baseFormatos) &&
+      JSON.stringify(motor.estructura()) === this.baseEstructura;
+    if (this.estado() === 'cargando' || !sinCambios) return;
     this.api.estado().subscribe({
       next: (estado) => {
-        if (estado.version === this.version || !mismasCapturas(motor.capturas(), this.base)) return;
+        if (estado.version === this.version) return;
+        const siguenSinCambios =
+          mismasCapturas(motor.capturas(), this.base) &&
+          mismasCapturas(this.serializarFormatos(motor.formatos()), this.baseFormatos) &&
+          JSON.stringify(motor.estructura()) === this.baseEstructura;
+        if (!siguenSinCambios) return;
         this.pilaDeshacer = [];
         this.pilaRehacer = [];
         this.historial.set({ deshacer: 0, rehacer: 0 });
@@ -789,7 +1318,10 @@ export class BoletosLibroPage implements OnInit {
   private respaldar(): void {
     const motor = this.motor();
     if (!motor) return;
-    const respaldo: Respaldo = { base: this.base, actual: motor.capturas() };
+    const respaldo: Respaldo = {
+      base: { estructura: this.baseEstructura, capturas: this.base, formatos: this.baseFormatos },
+      actual: { estructura: JSON.stringify(motor.estructura()), capturas: motor.capturas(), formatos: this.serializarFormatos(motor.formatos()) },
+    };
     escribirLocal(CLAVE_RESPALDO, JSON.stringify(respaldo));
   }
 }
@@ -899,6 +1431,18 @@ function grosores(bd: string | undefined): Partial<Record<'t' | 'r' | 'b' | 'l',
   return lados;
 }
 
+/**
+ * Inserta (o re-apunta) una referencia al final de una fórmula cuando la cola
+ * espera una: tras `=`, un operador, `(`, `,`, `;` o `:`, o reemplazando la
+ * referencia ya escrita en esa posición. Devuelve null si no es un punto válido.
+ */
+function insertarRefEnFormula(texto: string, ref: string): string | null {
+  const m = /([=+\-*/^(,;:])(\s*)((?:'(?:[^']|'')*'!|[A-Za-z0-9_.áéíóúñ]+!)?[A-Za-z]{1,3}\d{1,7})?$/.exec(texto);
+  if (!m) return null;
+  if (m[3]) return texto.slice(0, texto.length - m[3].length) + ref;
+  return texto + ref;
+}
+
 function horaCorta(iso: string): string {
   const fecha = new Date(iso);
   if (Number.isNaN(fecha.getTime())) return '';
@@ -926,7 +1470,18 @@ function leerRespaldo(): Respaldo | null {
     const raw = localStorage.getItem(CLAVE_RESPALDO);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Respaldo;
-    return parsed && typeof parsed.base === 'object' && typeof parsed.actual === 'object' ? parsed : null;
+    const ok =
+      parsed &&
+      parsed.base &&
+      parsed.actual &&
+      typeof parsed.base.capturas === 'object' &&
+      typeof parsed.actual.capturas === 'object';
+    if (!ok) return null;
+    parsed.base.formatos ??= {};
+    parsed.actual.formatos ??= {};
+    parsed.base.estructura ??= '[]';
+    parsed.actual.estructura ??= '[]';
+    return parsed;
   } catch {
     return null;
   }

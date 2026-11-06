@@ -41,6 +41,7 @@ describe('Captura de socios', () => {
   };
 
   beforeEach(() => {
+    localStorage.removeItem('base580-captura-borrador-v1');
     params = new BehaviorSubject(convertToParamMap({}));
     TestBed.configureTestingModule({
       imports: [CapturePage],
@@ -52,16 +53,19 @@ describe('Captura de socios', () => {
     fixture = TestBed.createComponent(CapturePage);
     render();
   });
-  afterEach(() => { http.verify(); vi.restoreAllMocks(); });
+  afterEach(() => { http.verify(); vi.restoreAllMocks(); localStorage.removeItem('base580-captura-borrador-v1'); });
 
   it('crea, lista y edita un socio sin modificar su ID ni sus datos ajenos al formulario', async () => {
     click('Crear socio');
     input('id', ' 710 '); input('name', ' Ana Pérez '); input('plate', 'ABC');
     click('Guardar');
+    expect(text()).toContain('Borrador guardado');
+    http.expectNone('/api/state');
+    click('Publicar mi borrador');
     const created = saveResponse();
     expect(created.members.find((m) => m.id === '710')).toMatchObject({ name: 'Ana Pérez', plate: 'ABC' });
     await settle();
-    expect(text()).toContain('Cambios guardados en el servidor');
+    expect(text()).toContain('Borrador publicado correctamente');
     click('Lista');
     expect(text()).toContain('Ana Pérez');
     store.updateMember('710', { dayTickets: 5 });
@@ -72,6 +76,7 @@ describe('Captura de socios', () => {
     expect((fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>('[name="id"]')!.readOnly).toBe(true);
     input('name', 'Ana Actualizada');
     click('Guardar');
+    click('Publicar mi borrador');
     const updated = saveResponse();
     expect(updated.members.find((m) => m.id === '710')).toMatchObject({ name: 'Ana Actualizada', plate: 'ABC', dayTickets: 5 });
     await settle();
@@ -96,6 +101,7 @@ describe('Captura de socios', () => {
     http.expectNone('/api/state');
     click('Eliminar');
     expect(confirm).toHaveBeenCalledTimes(2);
+    click('Publicar mi borrador');
     const body = saveResponse();
     expect(body.members).toHaveLength(0);
     expect(body.auditTrail['398']).toBeUndefined();
@@ -105,27 +111,28 @@ describe('Captura de socios', () => {
 
   it('informa fallo de guardado y reintenta la misma modificación local', async () => {
     click('Crear socio'); input('id', '901'); input('name', 'Socio remoto'); click('Guardar');
+    click('Publicar mi borrador');
     const failed = http.expectOne('/api/state');
     failed.flush('error', { status: 503, statusText: 'Unavailable' });
     await settle();
-    expect(text()).toContain('No se pudo confirmar el guardado');
-    expect(text()).not.toContain('Cambios guardados en el servidor');
+    expect(text()).toContain('No se pudo publicar');
+    expect(text()).not.toContain('Borrador publicado correctamente');
     expect(store.member('901')?.name).toBe('Socio remoto');
     click('Reintentar sincronización');
     expect(saveResponse().members.find((m) => m.id === '901')?.name).toBe('Socio remoto');
     await settle();
-    expect(text()).toContain('Cambios guardados en el servidor');
-    expect(text()).not.toContain('No se pudo confirmar el guardado');
+    expect(text()).toContain('Borrador publicado correctamente');
+    expect(text()).not.toContain('No se pudo publicar');
   });
 
-  it('no recarga el servidor cuando hay una modificación que falló al guardar', async () => {
+  it('conserva el borrador si falla la publicación', async () => {
     click('Crear socio'); input('id', '902'); input('name', 'Pendiente'); click('Guardar');
+    click('Publicar mi borrador');
     http.expectOne('/api/state').flush('error', { status: 503, statusText: 'Unavailable' });
     await settle();
-    const sync = TestBed.inject(BackendSyncService);
-    await expect(sync.reloadFromBackend()).rejects.toThrow('cambios locales pendientes');
     http.expectNone('/api/state');
     expect(store.member('902')?.name).toBe('Pendiente');
+    expect(localStorage.getItem('base580-captura-borrador-v1')).toContain('Pendiente');
     click('Reintentar sincronización');
     expect(saveResponse().members.some((m) => m.id === '902')).toBe(true);
     await settle();
@@ -137,9 +144,61 @@ describe('Captura de socios', () => {
     params.next(convertToParamMap({ id: 'ausente' })); render();
     expect(text()).toContain('No se encontró el socio con ID ausente');
   });
+
+  it('conserva el borrador al detectar cambios simultáneos y muestra las diferencias', async () => {
+    const remote = structuredClone(TestBed.inject(BackendSyncService).currentServerState()!);
+    remote.members[0].plate = 'REMOTA';
+    remote.updatedAt = 'nueva-version';
+    click('Crear socio'); input('id', '903'); input('name', 'Borrador'); click('Guardar');
+    click('Publicar mi borrador');
+    const publish = http.expectOne('/api/state');
+    expect(publish.request.headers.has('If-Match')).toBe(true);
+    publish.flush('conflicto', { status: 409, statusText: 'Conflict' });
+    await settle();
+    http.expectOne('/api/state').flush(remote);
+    await settle();
+    expect(text()).toContain('Placas');
+    expect(text()).toContain('REMOTA');
+    expect(localStorage.getItem('base580-captura-borrador-v1')).toContain('Borrador');
+    click('Sí, ver versión actual');
+    expect(text()).toContain('Tu borrador sigue guardado');
+    click('Ver mi borrador');
+    expect(text()).toContain('Borrador');
+  });
+
+  it('integra cambios remotos en el borrador sin perder cambios locales', async () => {
+    const remote = structuredClone(TestBed.inject(BackendSyncService).currentServerState()!);
+    remote.members[0].plate = 'REMOTA';
+    remote.updatedAt = 'nueva-version';
+    click('Crear socio'); input('id', '904'); input('name', 'Local'); click('Guardar');
+    click('Ver versión actual');
+    http.expectOne('/api/state').flush(remote);
+    await settle();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    click('Actualizar mi borrador con la versión actual');
+    expect(store.member('398')?.plate).toBe('REMOTA');
+    expect(store.member('904')?.name).toBe('Local');
+    click('Publicar mi borrador');
+    const req = http.expectOne('/api/state');
+    expect(req.request.headers.get('If-Match')).toBe('"nueva-version"');
+    expect(req.request.body.members.find((m: { id: string }) => m.id === '398').plate).toBe('REMOTA');
+    req.flush({ ...req.request.body, updatedAt: 'publicada' });
+    await settle();
+  });
+
+  it('mantiene el borrador fuera del estado compartido al salir de Captura', () => {
+    click('Crear socio'); input('id', '905'); input('name', 'Solo local'); click('Guardar');
+    expect(store.member('905')).toBeDefined();
+    fixture.destroy();
+    expect(store.member('905')).toBeUndefined();
+    expect(localStorage.getItem('base580-captura-borrador-v1')).toContain('Solo local');
+    http.expectNone('/api/state');
+  });
 });
 
 describe('Inicialización remota de captura', () => {
+  beforeEach(() => localStorage.removeItem('base580-captura-borrador-v1'));
+  afterEach(() => localStorage.removeItem('base580-captura-borrador-v1'));
   it('espera el estado remoto antes de abrir el socio de la ruta inicial', async () => {
     TestBed.configureTestingModule({
       imports: [CapturePage],
