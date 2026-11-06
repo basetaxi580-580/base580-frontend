@@ -1,8 +1,9 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectorRef, Component, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, inject, OnDestroy } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
-import { BackendSyncService } from '../data/backend-api.service';
+import { AppStateDto, BackendSyncService } from '../data/backend-api.service';
 import { MemberStore, MemberProfile } from '../data/member.store';
 
 @Component({
@@ -22,8 +23,21 @@ import { MemberStore, MemberProfile } from '../data/member.store';
       </div>
       <nav *ngIf="sync.loadStatus() === 'ready'" class="action-row" aria-label="Opciones de captura">
         <button type="button" class="secondary" [disabled]="busy" (click)="showList()">Lista</button>
-        <button type="button" class="primary" [disabled]="busy" (click)="create()">Crear socio</button>
+        <button type="button" class="primary" [disabled]="busy || (viewingCurrent && !!draft)" (click)="create()">Crear socio</button>
+        <button type="button" class="secondary" [disabled]="busy" (click)="compareCurrent()">Ver versión actual</button>
+        <button type="button" class="secondary" *ngIf="draft" [disabled]="busy" (click)="showDraft()">Ver mi borrador</button>
+        <button type="button" class="primary" *ngIf="draft" [disabled]="busy" (click)="publish()">Publicar mi borrador</button>
       </nav>
+      <article class="capture-card" *ngIf="remoteState">
+        <h3>Cambios en la versión actual</h3>
+        <p>Si abres la versión actual, cambiará lo que ves en esta página. El borrador guardado se conservará; los cambios del formulario que aún no hayas guardado se perderán.</p>
+        <ul><li *ngFor="let change of remoteChanges">{{ change }}</li></ul>
+        <div class="action-row">
+          <button type="button" class="primary" (click)="showCurrent()">Sí, ver versión actual</button>
+          <button type="button" class="secondary" *ngIf="draft" (click)="rebaseDraft()">Actualizar mi borrador con la versión actual</button>
+          <button type="button" class="secondary" (click)="remoteState = null">Cancelar</button>
+        </div>
+      </article>
       <p class="save-note" role="status" *ngIf="message">{{ message }}</p>
       <div *ngIf="syncError" role="alert">
         <p>{{ syncError }}</p>
@@ -36,8 +50,8 @@ import { MemberStore, MemberProfile } from '../data/member.store';
         <div class="member-row" *ngFor="let member of members">
           <div><strong>{{ member.name }}</strong><p>ID {{ member.id }} · {{ member.status }}</p></div>
           <div class="action-row">
-            <button type="button" class="secondary" [disabled]="busy" (click)="edit(member.id)">Editar</button>
-            <button type="button" class="secondary" [disabled]="busy" (click)="remove(member)">Eliminar</button>
+            <button type="button" class="secondary" [disabled]="busy || (viewingCurrent && !!draft)" (click)="edit(member.id)">Editar</button>
+            <button type="button" class="secondary" [disabled]="busy || (viewingCurrent && !!draft)" (click)="remove(member)">Eliminar</button>
           </div>
         </div>
       </article>
@@ -199,7 +213,7 @@ import { MemberStore, MemberProfile } from '../data/member.store';
     `,
   ],
 })
-export class CapturePage {
+export class CapturePage implements OnDestroy {
   private readonly changeDetector = inject(ChangeDetectorRef);
   private readonly route = inject(ActivatedRoute);
   private readonly store = inject(MemberStore);
@@ -213,14 +227,34 @@ export class CapturePage {
   protected validationError = '';
   protected syncError = '';
   protected busy = false;
+  protected draft: { base: AppStateDto; state: AppStateDto } | null = null;
+  protected remoteState: AppStateDto | null = null;
+  protected remoteChanges: string[] = [];
+  private readonly draftKey = 'base580-captura-borrador-v1';
+  protected viewingCurrent = false;
 
   constructor() {
-    this.route.paramMap.subscribe((params) => {
+    try {
+      const saved = localStorage.getItem(this.draftKey);
+      if (saved) {
+        const draft = JSON.parse(saved);
+        if (draft?.base && Array.isArray(draft?.state?.members)) {
+          this.draft = draft;
+          this.store.applyState(draft.state);
+        }
+      }
+    } catch { this.syncError = 'No se pudo recuperar el borrador local.'; }
+    this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
       const id = params.get('id');
       if (id && this.sync.loadStatus() === 'ready') this.edit(id);
       else this.showList();
       this.changeDetector.markForCheck();
     });
+  }
+
+  ngOnDestroy(): void {
+    const shared = this.sync.currentServerState();
+    if (this.draft && shared) this.store.applyState(shared);
   }
 
   protected get members(): MemberProfile[] { return this.store.membersList(); }
@@ -287,7 +321,7 @@ export class CapturePage {
     this.baseline = structuredClone(this.store.member(id)!);
     this.model = structuredClone(this.baseline);
     this.validationError = '';
-    await this.persist();
+    this.saveDraft();
   }
 
   protected async remove(member: MemberProfile): Promise<void> {
@@ -297,7 +331,7 @@ export class CapturePage {
       this.message = 'El socio ya no existe.';
       return;
     }
-    await this.persist();
+    this.saveDraft();
   }
 
   protected async reload(): Promise<void> {
@@ -316,23 +350,139 @@ export class CapturePage {
     }
   }
 
-  protected async retry(): Promise<void> {
-    if (!this.busy && this.sync.loadStatus() === 'ready') await this.persist();
+  protected async retry(): Promise<void> { await this.publish(); }
+
+  private saveDraft(): void {
+    const base = this.draft?.base ?? this.sync.currentServerState();
+    if (!base) { this.syncError = 'No se conoce la versión original del servidor.'; return; }
+    const draft = { base, state: this.store.snapshot() };
+    try {
+      localStorage.setItem(this.draftKey, JSON.stringify(draft));
+      this.draft = draft;
+      this.viewingCurrent = false;
+      this.syncError = '';
+      this.message = 'Borrador guardado en este navegador. Aún no está publicado.';
+    } catch { this.syncError = 'No se pudo guardar el borrador en este navegador.'; }
   }
 
-  private async persist(): Promise<void> {
+  protected async compareCurrent(): Promise<void> {
     this.busy = true;
-    this.message = '';
     try {
-      await this.sync.saveToBackend();
+      const current = await this.sync.readCurrent();
+      const base = this.draft?.base ?? this.sync.currentServerState();
+      this.remoteChanges = this.describeChanges(base, current);
+      this.remoteState = current;
       this.syncError = '';
-      this.message = 'Cambios guardados en el servidor.';
-    } catch {
-      this.syncError = 'No se pudo confirmar el guardado en el servidor. El cambio sigue en esta sesión; reintenta antes de salir.';
-    } finally {
-      this.busy = false;
-      this.changeDetector.markForCheck();
+    } catch { this.syncError = 'No se pudo consultar la versión actual.'; }
+    finally { this.busy = false; this.changeDetector.markForCheck(); }
+  }
+
+  private describeChanges(base: AppStateDto | null, current: AppStateDto): string[] {
+    if (!base) return ['No hay una versión anterior para comparar.'];
+    const labels: Record<string, string> = { name: 'Nombre', memberType: 'Tipo de socio', employee: 'Empleado', site: 'Sitio', plate: 'Placas', sticker: 'Engomado', expiry: 'Vencimiento', status: 'Estatus', notes: 'Observaciones', dayTickets: 'Boletos diurnos', nightTickets: 'Boletos nocturnos', totalTickets: 'Boletos totales', nightSaving: 'Ahorro nocturno', personalSaving: 'Ahorro personal', cardPayment: 'Pago con tarjeta' };
+    const before = new Map(base.members.map(m => [m.id, m]));
+    const after = new Map(current.members.map(m => [m.id, m]));
+    const changes: string[] = [];
+    for (const id of new Set([...before.keys(), ...after.keys()])) {
+      const a = before.get(id), b = after.get(id);
+      if (!a) { changes.push(`Socio ${id} agregado: ${b?.name}`); continue; }
+      if (!b) { changes.push(`Socio ${id} eliminado: ${a.name}`); continue; }
+      for (const key of Object.keys(labels) as (keyof typeof labels)[]) {
+        const field = key as keyof typeof a;
+        if (a[field] !== b[field]) changes.push(`Socio ${id}, ${labels[key]}: ${a[field] || '—'} → ${b[field] || '—'}`);
+      }
+      if (JSON.stringify(a) !== JSON.stringify(b) && !changes.some(change => change.startsWith(`Socio ${id},`))) changes.push(`Socio ${id}: otros datos cambiaron.`);
     }
+    if (JSON.stringify(base.catalogs) !== JSON.stringify(current.catalogs)) changes.push('Los catálogos cambiaron.');
+    if (JSON.stringify(base.auditTrail) !== JSON.stringify(current.auditTrail)) changes.push('La auditoría cambió.');
+    return changes.length ? changes : ['No hay cambios en los datos respecto de tu versión inicial.'];
+  }
+
+  protected showCurrent(): void {
+    if (!this.remoteState) return;
+    if (this.draft) this.store.applyState(this.remoteState);
+    else this.sync.syncLocalState(this.remoteState);
+    this.viewingCurrent = true;
+    this.remoteState = null;
+    this.showList();
+    this.message = this.draft ? 'Ves la versión actual. Tu borrador sigue guardado en este navegador.' : 'Ves la versión actual.';
+  }
+
+  protected showDraft(): void {
+    if (!this.draft) return;
+    this.store.applyState(this.draft.state);
+    this.viewingCurrent = false;
+    this.showList();
+    this.message = 'Ves tu borrador local.';
+  }
+
+  protected rebaseDraft(): void {
+    if (!this.draft || !this.remoteState) return;
+    const { base, state: local } = this.draft;
+    const remote = this.remoteState;
+    const merged = structuredClone(remote);
+    const original = new Map(base.members.map(member => [member.id, member]));
+    const edits = new Map(local.members.map(member => [member.id, member]));
+    const current = new Map(merged.members.map(member => [member.id, member]));
+    const conflicts: string[] = [];
+    const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+    for (const id of new Set([...original.keys(), ...edits.keys()])) {
+      const prior = original.get(id), edited = edits.get(id), actual = current.get(id);
+      if (equal(prior, edited)) continue;
+      if (!prior || !edited || !actual) {
+        if (!equal(prior, actual) && !equal(edited, actual)) conflicts.push(`Socio ${id}: creación o eliminación`);
+        if (edited) current.set(id, structuredClone(edited)); else current.delete(id);
+        continue;
+      }
+      const result = structuredClone(actual) as unknown as Record<string, unknown>;
+      const oldFields = prior as unknown as Record<string, unknown>;
+      const newFields = edited as unknown as Record<string, unknown>;
+      const actualFields = actual as unknown as Record<string, unknown>;
+      for (const key of Object.keys(newFields)) {
+        if (equal(oldFields[key], newFields[key])) continue;
+        if (!equal(oldFields[key], actualFields[key]) && !equal(newFields[key], actualFields[key])) conflicts.push(`Socio ${id}: ${key}`);
+        result[key] = structuredClone(newFields[key]);
+      }
+      current.set(id, result as unknown as MemberProfile);
+    }
+    merged.members = [...current.values()];
+    for (const id of new Set([...Object.keys(base.auditTrail), ...Object.keys(local.auditTrail)])) {
+      if (equal(base.auditTrail[id], local.auditTrail[id])) continue;
+      if (!equal(base.auditTrail[id], remote.auditTrail[id]) && !equal(local.auditTrail[id], remote.auditTrail[id])) conflicts.push(`Socio ${id}: auditoría`);
+      if (local.auditTrail[id]) merged.auditTrail[id] = structuredClone(local.auditTrail[id]);
+      else delete merged.auditTrail[id];
+    }
+    const warning = conflicts.length ? `Hay cambios en los mismos datos: ${conflicts.join(', ')}. Se conservarán tus valores locales en esos campos.` : 'Se incorporarán los cambios actuales y se conservarán tus cambios locales.';
+    if (!window.confirm(`${warning}\n\nEsto actualiza tu borrador local; aún tendrás que publicarlo. ¿Continuar?`)) return;
+    const draft = { base: structuredClone(remote), state: merged };
+    try {
+      localStorage.setItem(this.draftKey, JSON.stringify(draft));
+      this.draft = draft;
+      this.remoteState = null;
+      this.showDraft();
+      this.message = 'Borrador actualizado con la versión actual. Revísalo antes de publicarlo.';
+    } catch { this.syncError = 'No se pudo actualizar el borrador en este navegador.'; }
+  }
+
+  protected async publish(): Promise<void> {
+    if (!this.draft || this.busy) return;
+    const draft = this.draft;
+    this.busy = true;
+    try {
+      const result = await this.sync.publishDraft(draft.state, draft.base);
+      localStorage.removeItem(this.draftKey);
+      this.draft = null;
+      this.remoteState = null;
+      this.viewingCurrent = false;
+      this.message = `Borrador publicado correctamente.`;
+      this.syncError = '';
+      this.store.applyState(result);
+    } catch (error: any) {
+      this.syncError = error?.status === 409 ? 'La versión actual cambió. Tu borrador sigue guardado; consulta los cambios antes de continuar.' : 'No se pudo publicar. Tu borrador sigue guardado en este navegador.';
+      if (error?.status === 409) {
+        try { const current = await this.sync.readCurrent(); this.remoteChanges = this.describeChanges(draft.base, current); this.remoteState = current; } catch { /* el borrador sigue disponible */ }
+      }
+    } finally { this.busy = false; this.changeDetector.markForCheck(); }
   }
 
   protected reset(): void {

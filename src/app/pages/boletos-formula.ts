@@ -369,3 +369,91 @@ function partir(ref: string): { col: number; fila: number } | null {
   if (col < 0 || fila <= 0) return null;
   return { col, fila };
 }
+
+/** Operación de columna para reescribir referencias: insertar (delta>0) o eliminar (delta<0). */
+export type OpColumna = { hoja: string; col: number; delta: number };
+
+/**
+ * Reescribe una fórmula al insertar o eliminar una columna en `op.hoja` desde el
+ * índice `op.col`. `hojaFormula` es la hoja donde vive la fórmula (para las
+ * referencias sin calificar). Devuelve la fórmula nueva y si alguna referencia cae
+ * en la columna eliminada (`refInvalida`). Fórmulas que no se pueden tokenizar se
+ * devuelven sin cambios.
+ */
+export function desplazarColumnas(
+  formula: string,
+  hojaFormula: string,
+  op: OpColumna,
+): { formula: string; refInvalida: boolean } {
+  const cuerpo = formula.trim().replace(/^=/, '');
+  const tokens = tokenizar(cuerpo);
+  if (!tokens) return { formula, refInvalida: false };
+  let refInvalida = false;
+
+  const mover = (valor: string, hojaRango: string | null): string => {
+    const { hoja, ref } = separarRef(valor);
+    const destino = hoja ?? hojaRango ?? hojaFormula;
+    const match = /^([A-Z]+)(\d+)$/.exec(ref);
+    if (!match) return valor;
+    if (!mismaHojaNombre(destino, op.hoja)) return valor;
+    const col = indiceColumna(match[1]);
+    const nueva = desplazarIndice(col, op);
+    if (nueva === null) {
+      refInvalida = true;
+      return valor;
+    }
+    const refNueva = `${letraColumna(nueva)}${match[2]}`;
+    return hoja === null ? refNueva : `${hoja}!${refNueva}`;
+  };
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.t !== 'ref') continue;
+    const esRango = tokens[i + 1]?.t === 'colon' && tokens[i + 2]?.t === 'ref';
+    if (esRango) {
+      const hojaRango = separarRef(token.v).hoja;
+      tokens[i] = { t: 'ref', v: mover(token.v, null) };
+      tokens[i + 2] = { t: 'ref', v: mover((tokens[i + 2] as { t: 'ref'; v: string }).v, hojaRango) };
+      i += 2;
+    } else {
+      tokens[i] = { t: 'ref', v: mover(token.v, null) };
+    }
+  }
+
+  return { formula: `=${serializarTokens(tokens)}`, refInvalida };
+}
+
+function desplazarIndice(col: number, op: OpColumna): number | null {
+  if (op.delta > 0) return col >= op.col ? col + op.delta : col;
+  if (col === op.col) return null;
+  return col > op.col ? col + op.delta : col;
+}
+
+function mismaHojaNombre(a: string, b: string): boolean {
+  return a.trim().toUpperCase() === b.trim().toUpperCase();
+}
+
+function serializarTokens(tokens: Token[]): string {
+  let salida = '';
+  for (const token of tokens) {
+    switch (token.t) {
+      case 'num': salida += String(token.v); break;
+      case 'op': salida += token.v; break;
+      case 'name': salida += token.v; break;
+      case 'sep': salida += ','; break;
+      case 'colon': salida += ':'; break;
+      case 'lp': salida += '('; break;
+      case 'rp': salida += ')'; break;
+      case 'ref': salida += serializarRef(token.v); break;
+    }
+  }
+  return salida;
+}
+
+/** `Hoja!A1` -> `'Hoja'!A1` (comillas siempre, por si el nombre tiene espacios); `A1` queda igual. */
+function serializarRef(valor: string): string {
+  const { hoja, ref } = separarRef(valor);
+  if (hoja === null) return ref;
+  return `'${hoja.replace(/'/g, "''")}'!${ref}`;
+}
+

@@ -6,6 +6,10 @@ import { environment } from '../../environments/environment';
 /** Capturas compartidas de la réplica del Excel ("Hoja!A1" -> texto capturado). */
 export type EstadoLibro = {
   capturas: Record<string, string>;
+  /** Formato por celda ("Hoja!A1" -> JSON del estilo parcial). */
+  formatos: Record<string, string>;
+  /** Operaciones de columna (insertar/eliminar) como JSON; null si nunca se guardó. */
+  estructura: string | null;
   /** null cuando nunca se ha guardado. */
   version: number | null;
   actualizado: string | null;
@@ -23,7 +27,12 @@ export class BoletosLibroApiService {
     return this.http.get<EstadoLibro>(this.url);
   }
 
-  guardar(capturas: Record<string, string>, version: number | null): Observable<EstadoLibro> {
-    return this.http.put<EstadoLibro>(this.url, { capturas, version });
+  guardar(
+    capturas: Record<string, string>,
+    formatos: Record<string, string>,
+    estructura: string,
+    version: number | null,
+  ): Observable<EstadoLibro> {
+    return this.http.put<EstadoLibro>(this.url, { capturas, formatos, estructura, version });
   }
 }
