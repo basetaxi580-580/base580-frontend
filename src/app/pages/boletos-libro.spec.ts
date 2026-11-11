@@ -56,6 +56,16 @@ describe('Réplica de PAGO BOLETOS 2026.xlsx', () => {
     expect(filasDeHoja(motor.hojaInicial())).toHaveLength(FILAS_BASE_LIBRO);
   });
 
+  it('reordena pestañas y reconstruye el mismo orden desde el estado', () => {
+    const motor = new MotorLibro(libro);
+    expect(motor.moverPestana('BASE NTE 25', 'BASE NTE 26')).toBe(true);
+    const orden = motor.ordenPestanas();
+    expect(orden.slice(0, 2)).toEqual(['BASE NTE 26', 'BASE NTE 25']);
+    const recargado = new MotorLibro(libro);
+    recargado.cargarOrden(orden);
+    expect(recargado.ordenPestanas().slice(0, 2)).toEqual(['BASE NTE 26', 'BASE NTE 25']);
+  });
+
   it('permite renombrar hojas importadas y protege su eliminación si hay referencias', () => {
     const motor = new MotorLibro(libro);
     motor.establecer('MANUALES', 'ZZ999', "='BASE NTE 25'!A1");

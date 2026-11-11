@@ -14,6 +14,7 @@ export type EstadoLibro = {
   version: number | null;
   actualizado: string | null;
   pestanasPersonalizadas: PestanaPersonalizada[];
+  ordenPestanas: string[];
 };
 
 export type PestanaPersonalizada = { id: string; nombre: string };
@@ -35,8 +36,9 @@ export class BoletosLibroApiService {
     formatos: Record<string, string>,
     estructura: string,
     pestanasPersonalizadas: PestanaPersonalizada[],
+    ordenPestanas: string[],
     version: number | null,
   ): Observable<EstadoLibro> {
-    return this.http.put<EstadoLibro>(this.url, { capturas, formatos, estructura, pestanasPersonalizadas, version });
+    return this.http.put<EstadoLibro>(this.url, { capturas, formatos, estructura, pestanasPersonalizadas, ordenPestanas, version });
   }
 }

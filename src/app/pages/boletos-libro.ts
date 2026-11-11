@@ -99,6 +99,7 @@ export class MotorLibro {
   /** Operaciones de columna aplicadas, en orden. */
   private ops: OpLibro[] = [];
   private personales: PestanaPersonalizada[] = [];
+  private orden: string[] = [];
   /** Copia de trabajo (el original con columnas insertadas/eliminadas). */
   libro: LibroJson;
 
@@ -245,12 +246,33 @@ export class MotorLibro {
     this.libro.sheets.splice(ultimaBase + 1, 0, ...nuevas);
     this.indexar();
     for (const op of this.ops) this.ejecutarOp(op);
+    this.aplicarOrden();
     this.memo.clear();
   }
 
   esOriginal(nombre: string): boolean { return this.original.sheets.some((h) => h.name.trim().toUpperCase() === nombre.trim().toUpperCase()); }
 
   personalizadas(): PestanaPersonalizada[] { return this.personales.map((p) => ({ ...p })); }
+
+  ordenPestanas(): string[] { return this.libro.sheets.map((h) => h.name.trim()); }
+
+  cargarOrden(orden: string[]): void {
+    this.orden = orden.map((nombre) => nombre.trim()).filter(Boolean);
+    this.reconstruir();
+  }
+
+  moverPestana(nombre: string, destino: string): boolean {
+    const origenClave = nombre.trim().toUpperCase();
+    const destinoClave = destino.trim().toUpperCase();
+    const origen = this.libro.sheets.findIndex((h) => h.name.trim().toUpperCase() === origenClave);
+    const indiceDestino = this.libro.sheets.findIndex((h) => h.name.trim().toUpperCase() === destinoClave);
+    if (origen < 0 || indiceDestino < 0 || origen === indiceDestino) return false;
+    const [hoja] = this.libro.sheets.splice(origen, 1);
+    this.libro.sheets.splice(indiceDestino, 0, hoja);
+    this.orden = this.ordenPestanas();
+    this.indexar();
+    return true;
+  }
 
   agregarPersonalizada(pestana: PestanaPersonalizada): boolean {
     if (this.hoja(pestana.nombre)) return false;
@@ -280,6 +302,7 @@ export class MotorLibro {
     this.formatosMap = renombrarClaves(this.formatosMap, anterior, nombre);
     hoja.name = nombre;
     pestana.nombre = nombre;
+    this.orden = this.orden.map((actual) => actual.trim().toUpperCase() === anterior.trim().toUpperCase() ? nombre : actual);
     this.indexar();
     this.memo.clear();
     return true;
@@ -289,6 +312,7 @@ export class MotorLibro {
     const hoja = this.hoja(nombre);
     if (!hoja || this.hoja(nuevo)) return false;
     const anterior = hoja.name;
+    this.orden = this.orden.map((actual) => actual.trim().toUpperCase() === anterior.trim().toUpperCase() ? nuevo : actual);
     this.ops.push({ hoja: anterior, tipo: 'renHoja', nuevo });
     this.entradas = renombrarClaves(this.entradas, anterior, nuevo);
     this.entradas = renombrarValoresFormula(this.entradas, anterior, nuevo);
@@ -316,6 +340,21 @@ export class MotorLibro {
     this.formatosMap = sinHoja(this.formatosMap, hoja.name);
     this.reconstruir();
     return true;
+  }
+
+  private aplicarOrden(): void {
+    if (!this.orden.length) return;
+    const pendientes = new Map(this.libro.sheets.map((hoja) => [hoja.name.trim().toUpperCase(), hoja]));
+    const ordenadas: HojaLibro[] = [];
+    for (const nombre of this.orden) {
+      const clave = nombre.trim().toUpperCase();
+      const hoja = pendientes.get(clave);
+      if (hoja) {
+        ordenadas.push(hoja);
+        pendientes.delete(clave);
+      }
+    }
+    this.libro.sheets = [...ordenadas, ...pendientes.values()];
   }
 
   private referenciasAHoja(nombre: string): boolean {
