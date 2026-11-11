@@ -14,7 +14,9 @@ export type ValorLibro = string | number | boolean | null;
 /** Operación estructural persistida del libro. */
 export type OpLibro =
   | { hoja: string; tipo: 'insCol' | 'delCol'; col: number }
+  | { hoja: string; tipo: 'anchoCol'; col: number; ancho: number }
   | { hoja: string; tipo: 'insFila' | 'delFila'; fila: number }
+  | { hoja: string; tipo: 'altoFila'; fila: number; alto: number }
   | { hoja: string; tipo: 'renHoja'; nuevo: string }
   | { hoja: string; tipo: 'delHoja' };
 /** [valor, fórmula, índice de estilo, valor calculado por Excel] */
@@ -274,6 +276,38 @@ export class MotorLibro {
     return true;
   }
 
+  /** Cambia el ancho de una columna y conserva el último arrastre como una operación. */
+  cambiarAnchoColumna(hojaNombre: string, col: number, ancho: number): boolean {
+    const hoja = this.hoja(hojaNombre);
+    if (!hoja || col < 0 || col >= hoja.maxCol) return false;
+    const valor = Math.max(36, Math.min(320, Math.round(ancho)));
+    const letra = letraColumna(col);
+    hoja.cols[letra] = valor;
+    this.reemplazarUltimaMedida({ hoja: hoja.name, tipo: 'anchoCol', col, ancho: valor });
+    return true;
+  }
+
+  /** Cambia el alto de una fila y conserva el último arrastre como una operación. */
+  cambiarAltoFila(hojaNombre: string, fila: number, alto: number): boolean {
+    const hoja = this.hoja(hojaNombre);
+    if (!hoja || fila < 1 || fila > hoja.maxRow) return false;
+    const valor = Math.max(18, Math.min(120, Math.round(alto)));
+    hoja.rows[String(fila)] = valor;
+    this.reemplazarUltimaMedida({ hoja: hoja.name, tipo: 'altoFila', fila, alto: valor });
+    return true;
+  }
+
+  private reemplazarUltimaMedida(op: OpLibro): void {
+    const ultima = this.ops[this.ops.length - 1];
+    const mismaColumna = op.tipo === 'anchoCol' && ultima?.tipo === 'anchoCol' && ultima.col === op.col;
+    const mismaFila = op.tipo === 'altoFila' && ultima?.tipo === 'altoFila' && ultima.fila === op.fila;
+    if (ultima && ultima.hoja === op.hoja && (mismaColumna || mismaFila)) {
+      this.ops[this.ops.length - 1] = op;
+    } else {
+      this.ops.push(op);
+    }
+  }
+
   agregarPersonalizada(pestana: PestanaPersonalizada): boolean {
     if (this.hoja(pestana.nombre)) return false;
     this.personales.push({ ...pestana });
@@ -452,6 +486,14 @@ export class MotorLibro {
     if (op.tipo === 'delHoja') {
       this.libro.sheets = this.libro.sheets.filter((otra) => otra !== hoja);
       this.indexar();
+      return;
+    }
+    if (op.tipo === 'anchoCol') {
+      hoja.cols[letraColumna(op.col)] = op.ancho;
+      return;
+    }
+    if (op.tipo === 'altoFila') {
+      hoja.rows[String(op.fila)] = op.alto;
       return;
     }
     if (op.tipo === 'insFila' || op.tipo === 'delFila') {

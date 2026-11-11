@@ -1,6 +1,6 @@
 import libroJson from './boletos-libro.data.json';
 import { evaluarFormula } from './boletos-formula';
-import { COLUMNAS_BASE_LIBRO, FILAS_BASE_LIBRO, LibroJson, MotorLibro, columnasDeHoja, formatear, filasDeHoja, fusionarCapturas, redondearExcel } from './boletos-libro';
+import { COLUMNAS_BASE_LIBRO, FILAS_BASE_LIBRO, LibroJson, MotorLibro, altoFila, anchoColumna, columnasDeHoja, formatear, filasDeHoja, fusionarCapturas, redondearExcel } from './boletos-libro';
 
 const libro = libroJson as unknown as LibroJson;
 
@@ -231,5 +231,18 @@ describe('Réplica de PAGO BOLETOS 2026.xlsx', () => {
 
     // No se puede eliminar una columna usada por fórmulas (col A alimenta los PAGAR).
     expect(new MotorLibro(libro).eliminarColumna('NORTE 26', 0).ok).toBe(false);
+  });
+
+  it('permite cambiar y reconstruir anchos de columnas y altos de filas', () => {
+    const motor = new MotorLibro(libro);
+    expect(motor.cambiarAnchoColumna('NORTE 26', 9, 180)).toBe(true);
+    expect(motor.cambiarAltoFila('NORTE 26', 3, 48)).toBe(true);
+    expect(anchoColumna(motor.hoja('NORTE 26')!, 'J')).toBe(180);
+    expect(altoFila(motor.hoja('NORTE 26')!, 3)).toBe(48);
+
+    const recargado = new MotorLibro(libro);
+    recargado.aplicarEstructura(motor.estructura());
+    expect(anchoColumna(recargado.hoja('NORTE 26')!, 'J')).toBe(180);
+    expect(altoFila(recargado.hoja('NORTE 26')!, 3)).toBe(48);
   });
 });

@@ -43,6 +43,7 @@ type CeldaVista = {
 type FilaVista = { n: number; alto: number; celdas: CeldaVista[] };
 type Vista = { cols: { letra: string; ancho: number }[]; filas: FilaVista[]; ancho: number };
 type Seleccion = { fila: number; col: number };
+type Redimension = { tipo: 'col' | 'fila'; indice: number; inicio: number; medida: number; antes: Instantanea };
 type MenuCtx = { x: number; y: number; tipo: 'celda' | 'columna' | 'fila' | 'pestana'; col: number; fila?: number; nombre?: string };
 type EstadoGuardado = 'cargando' | 'guardado' | 'guardando' | 'pendiente' | 'error' | 'sin-conexion';
 type Instantanea = { estructura: string; capturas: Record<string, string>; formatos: Record<string, string>; pestanas: PestanaPersonalizada[]; ordenPestanas: string[] };
@@ -146,14 +147,14 @@ const ANCHO_NUMEROS = 40;
               <tr>
                 <th class="esquina"></th>
                 @for (c of v.cols; track c.letra; let ci = $index) {
-                  <th [class.activa]="ci === sel().col" (contextmenu)="menuColumna(ci, $event)">{{ c.letra }}</th>
+                  <th [class.activa]="ci === sel().col" (contextmenu)="menuColumna(ci, $event)">{{ c.letra }}<span class="resize-col" (mousedown)="iniciarRedimensionColumna(ci, $event)" aria-hidden="true"></span></th>
                 }
               </tr>
             </thead>
             <tbody>
               @for (f of v.filas; track f.n; let fi = $index) {
                 <tr [style.height.px]="f.alto">
-                  <th class="fila-h" [class.activa]="fi === sel().fila" (contextmenu)="menuFila(fi, $event)">{{ f.n }}</th>
+                  <th class="fila-h" [class.activa]="fi === sel().fila" (contextmenu)="menuFila(fi, $event)">{{ f.n }}<span class="resize-row" (mousedown)="iniciarRedimensionFila(fi, $event)" aria-hidden="true"></span></th>
                   @for (c of f.celdas; track c.ref; let ci = $index) {
                     <td
                       [class]="c.clase"
@@ -273,7 +274,7 @@ const ANCHO_NUMEROS = 40;
     .rejilla:focus-visible { box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.24), 0 10px 28px rgba(88, 28, 135, 0.08); }
     table { border-collapse: separate; border-spacing: 0; table-layout: fixed; font: 11pt "Trebuchet MS", "Arial Rounded MT Bold", Calibri, Carlito, Arial, sans-serif; color: #000; }
     col.c-num { width: 40px; }
-    th { background: #fce7f3; color: #9f1239; font: 700 12px "Trebuchet MS", "Arial Rounded MT Bold", Calibri, Carlito, Arial, sans-serif; border-right: 1px solid #e9a8c6; border-bottom: 1px solid #e9a8c6; user-select: none; }
+    th { position: relative; background: #fce7f3; color: #9f1239; font: 700 12px "Trebuchet MS", "Arial Rounded MT Bold", Calibri, Carlito, Arial, sans-serif; border-right: 1px solid #e9a8c6; border-bottom: 1px solid #e9a8c6; user-select: none; }
     thead th { position: sticky; top: 0; z-index: 3; height: 20px; }
     .fila-h { position: sticky; left: 0; z-index: 2; text-align: center; }
     .esquina { left: 0; z-index: 4; }
@@ -283,6 +284,10 @@ const ANCHO_NUMEROS = 40;
     .flujo { display: flex; width: 100%; }
     .flujo .txt { flex: none; position: relative; z-index: 1; white-space: nowrap; }
     td.sel { box-shadow: inset 0 0 0 2px #7c3aed !important; z-index: 2; }
+    .resize-col, .resize-row { position: absolute; z-index: 6; display: block; background: transparent; }
+    .resize-col { top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; }
+    .resize-row { left: 0; right: 0; bottom: -4px; height: 8px; cursor: row-resize; }
+    .resize-col:hover, .resize-row:hover { background: #ec4899; }
     .contable { display: flex; justify-content: space-between; gap: 4px; }
     .editor { position: absolute; inset: 0; z-index: 5; width: 100%; height: 100%; box-sizing: border-box; padding: 0 2px; border: 2px solid #7c3aed; outline: none; background: #fff; font: inherit; }
     .pestanas { position: sticky; bottom: 0; z-index: 10; display: flex; gap: 6px; overflow-x: auto; padding: 8px; background: #fff; border: 1px solid rgba(236, 72, 153, 0.2); border-radius: 0 0 16px 16px; box-shadow: 0 -8px 20px rgba(88, 28, 135, 0.1); }
@@ -454,6 +459,7 @@ export class BoletosLibroPage implements OnInit {
   private objetivo: { hoja: string; ref: string } | null = null;
   /** true cuando la edición empezó tecleando (las flechas confirman y mueven, como en Excel). */
   private modoEntrada = false;
+  private redimensionando: Redimension | null = null;
 
   constructor() {
     // El editor aparece en el siguiente render: enfocarlo en cuanto existe.
@@ -495,6 +501,64 @@ export class BoletosLibroPage implements OnInit {
   @HostListener('document:keydown.escape')
   protected cerrarMenuEsc(): void {
     this.cerrarMenu();
+    this.terminarRedimension();
+  }
+
+  protected iniciarRedimensionColumna(ci: number, event: MouseEvent): void {
+    if (event.button !== 0) return;
+    const vista = this.vista();
+    const columna = vista?.cols[ci];
+    if (!columna) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.confirmarEdicion();
+    this.confirmarBarra();
+    this.cerrarMenu();
+    this.redimensionando = { tipo: 'col', indice: ci, inicio: event.clientX, medida: columna.ancho, antes: this.instantanea() };
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+  }
+
+  protected iniciarRedimensionFila(fi: number, event: MouseEvent): void {
+    if (event.button !== 0) return;
+    const vista = this.vista();
+    const fila = vista?.filas[fi];
+    if (!fila) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.confirmarEdicion();
+    this.confirmarBarra();
+    this.cerrarMenu();
+    this.redimensionando = { tipo: 'fila', indice: fi, inicio: event.clientY, medida: fila.alto, antes: this.instantanea() };
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'row-resize';
+  }
+
+  @HostListener('window:mousemove', ['$event'])
+  protected moverRedimension(event: MouseEvent): void {
+    const estado = this.redimensionando;
+    const motor = this.motor();
+    const hoja = this.hoja();
+    if (!estado || !motor || !hoja) return;
+    const delta = (estado.tipo === 'col' ? event.clientX : event.clientY) - estado.inicio;
+    const medida = estado.medida + delta;
+    const cambio = estado.tipo === 'col'
+      ? motor.cambiarAnchoColumna(hoja.name, estado.indice, medida)
+      : motor.cambiarAltoFila(hoja.name, (this.vista()?.filas[estado.indice]?.n ?? 0), medida);
+    if (cambio) this.cambios.update((n) => n + 1);
+  }
+
+  @HostListener('window:mouseup')
+  protected terminarRedimension(): void {
+    const estado = this.redimensionando;
+    if (!estado) return;
+    this.redimensionando = null;
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    if (!this.mismasInstantaneas(estado.antes, this.instantanea())) {
+      this.registrarDeshacer(estado.antes);
+      this.trasCambio();
+    }
   }
 
   @HostListener('window:beforeunload', ['$event'])
