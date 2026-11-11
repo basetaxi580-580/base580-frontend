@@ -516,8 +516,10 @@ export class BoletosLibroPage implements OnInit {
   protected menuPestana(nombre: string | null, event: MouseEvent): void {
     event.preventDefault();
     event.stopPropagation();
-    const x = Math.max(4, Math.min(event.clientX, window.innerWidth - 220));
-    this.menu.set({ x, y: 12, tipo: 'pestana', col: -1, nombre: nombre ?? undefined });
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = Math.max(4, Math.min(rect.left, window.innerWidth - 220));
+    const y = Math.max(8, rect.top - 104);
+    this.menu.set({ x, y, tipo: 'pestana', col: -1, nombre: nombre ?? undefined });
   }
 
   protected agregarPestana(): void {
