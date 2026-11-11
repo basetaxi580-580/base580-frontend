@@ -74,6 +74,9 @@ export type LibroJson = {
   sheets: HojaLibro[];
 };
 
+export const COLUMNAS_BASE_LIBRO = 38; // A..AL
+export const FILAS_BASE_LIBRO = 200;
+
 export type PestanaPersonalizada = { id: string; nombre: string };
 
 export type ValorCalculado =
@@ -669,7 +672,7 @@ export function mismasCapturas(a: Record<string, string>, b: Record<string, stri
 }
 
 function hojaPersonalizada(nombre: string): HojaLibro {
-  return { name: nombre, tab: '#70AD47', maxRow: 200, maxCol: 26, verFilas: 200, verCols: 26, cols: {}, rows: {}, hiddenCols: [], hiddenRows: [], freeze: null, cells: {} };
+  return { name: nombre, tab: '#70AD47', maxRow: FILAS_BASE_LIBRO, maxCol: COLUMNAS_BASE_LIBRO, verFilas: FILAS_BASE_LIBRO, verCols: COLUMNAS_BASE_LIBRO, cols: {}, rows: {}, hiddenCols: [], hiddenRows: [], freeze: null, cells: {} };
 }
 
 function renombrarReferenciaHoja(formula: string, anterior: string, nuevo: string): string {
@@ -801,13 +804,13 @@ function general(n: number): string {
 /** Columnas visibles A..maxCol de una hoja. */
 export function columnasDeHoja(hoja: HojaLibro): string[] {
   const ocultas = new Set(hoja.hiddenCols);
-  return Array.from({ length: hoja.verCols ?? hoja.maxCol }, (_, i) => letraColumna(i)).filter((letra) => !ocultas.has(letra));
+  return Array.from({ length: Math.max(COLUMNAS_BASE_LIBRO, hoja.verCols ?? hoja.maxCol) }, (_, i) => letraColumna(i)).filter((letra) => !ocultas.has(letra));
 }
 
 /** Filas visibles 1..maxRow de una hoja. */
 export function filasDeHoja(hoja: HojaLibro): number[] {
   const ocultas = new Set(hoja.hiddenRows);
-  return Array.from({ length: hoja.verFilas ?? hoja.maxRow }, (_, i) => i + 1).filter((fila) => !ocultas.has(fila));
+  return Array.from({ length: Math.max(FILAS_BASE_LIBRO, hoja.verFilas ?? hoja.maxRow) }, (_, i) => i + 1).filter((fila) => !ocultas.has(fila));
 }
 
 /** Ancho de columna en px (el predeterminado de la hoja si no tiene uno propio). */

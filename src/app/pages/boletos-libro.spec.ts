@@ -1,6 +1,6 @@
 import libroJson from './boletos-libro.data.json';
 import { evaluarFormula } from './boletos-formula';
-import { LibroJson, MotorLibro, columnasDeHoja, formatear, filasDeHoja, fusionarCapturas, redondearExcel } from './boletos-libro';
+import { COLUMNAS_BASE_LIBRO, FILAS_BASE_LIBRO, LibroJson, MotorLibro, columnasDeHoja, formatear, filasDeHoja, fusionarCapturas, redondearExcel } from './boletos-libro';
 
 const libro = libroJson as unknown as LibroJson;
 
@@ -38,16 +38,22 @@ describe('Réplica de PAGO BOLETOS 2026.xlsx', () => {
     const motor = new MotorLibro(libro);
     expect(motor.agregarPersonalizada({ id: 'amplia', nombre: 'CLIENTE AMPLIA' })).toBe(true);
     const hoja = motor.hoja('CLIENTE AMPLIA');
-    expect(hoja && columnasDeHoja(hoja)).toHaveLength(26);
-    expect(hoja && filasDeHoja(hoja)).toHaveLength(200);
+    expect(hoja && columnasDeHoja(hoja)).toHaveLength(COLUMNAS_BASE_LIBRO);
+    expect(hoja && filasDeHoja(hoja)).toHaveLength(FILAS_BASE_LIBRO);
     expect(motor.insertarColumna('CLIENTE AMPLIA', 0)).toBe(true);
-    expect(motor.hoja('CLIENTE AMPLIA')?.maxCol).toBe(27);
+    expect(motor.hoja('CLIENTE AMPLIA')?.maxCol).toBe(COLUMNAS_BASE_LIBRO + 1);
     expect(motor.insertarFila('CLIENTE AMPLIA', 1)).toBe(true);
     expect(motor.hoja('CLIENTE AMPLIA')?.maxRow).toBe(201);
     expect(motor.insertarFila('CLIENTE AMPLIA', 2)).toBe(true);
     expect(motor.insertarColumna('CLIENTE AMPLIA', 1)).toBe(true);
     expect(motor.hoja('CLIENTE AMPLIA')?.maxRow).toBe(202);
-    expect(motor.hoja('CLIENTE AMPLIA')?.maxCol).toBe(28);
+    expect(motor.hoja('CLIENTE AMPLIA')?.maxCol).toBe(COLUMNAS_BASE_LIBRO + 2);
+  });
+
+  it('mantiene la misma rejilla base para hojas importadas y nuevas', () => {
+    const motor = new MotorLibro(libro);
+    expect(columnasDeHoja(motor.hojaInicial())).toHaveLength(COLUMNAS_BASE_LIBRO);
+    expect(filasDeHoja(motor.hojaInicial())).toHaveLength(FILAS_BASE_LIBRO);
   });
 
   it('permite renombrar hojas importadas y protege su eliminación si hay referencias', () => {
