@@ -239,8 +239,8 @@ const ANCHO_NUMEROS = 40;
   styles: `
     /* contain: el ancho de la tabla no empuja el layout; el scroll queda dentro de la rejilla. */
     :host { display: block; contain: inline-size; }
-    .libro { display: flex; flex-direction: column; gap: 12px; min-width: 0; color: #463255; }
-    .barra, .fx, .formato { border: 1px solid rgba(236, 72, 153, 0.16); background: rgba(255, 255, 255, 0.78); box-shadow: 0 8px 24px rgba(88, 28, 135, 0.08); }
+    .libro { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 10px; border-radius: 20px; color: #463255; background: #fff; }
+    .barra, .fx, .formato { border: 1px solid rgba(236, 72, 153, 0.2); background: #fff; box-shadow: 0 8px 24px rgba(88, 28, 135, 0.08); }
     .barra { padding: 12px 14px; border-radius: 18px; }
     .barra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
     h1 { margin: 0; font-size: 1.25rem; color: #3a214e; }
@@ -271,9 +271,9 @@ const ANCHO_NUMEROS = 40;
     .formato .sep { width: 1px; align-self: stretch; background: #e5e5e5; margin: 2px; }
     .rejilla { overflow: auto; max-height: calc(100vh - 250px); min-height: 320px; border: 1px solid rgba(236, 72, 153, 0.2); border-radius: 16px 16px 0 0; background: #fff; outline: none; box-shadow: 0 10px 28px rgba(88, 28, 135, 0.08); }
     .rejilla:focus-visible { box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.24), 0 10px 28px rgba(88, 28, 135, 0.08); }
-    table { border-collapse: separate; border-spacing: 0; table-layout: fixed; font: 11pt Calibri, Carlito, Arial, sans-serif; color: #000; }
+    table { border-collapse: separate; border-spacing: 0; table-layout: fixed; font: 11pt "Trebuchet MS", "Arial Rounded MT Bold", Calibri, Carlito, Arial, sans-serif; color: #000; }
     col.c-num { width: 40px; }
-    th { background: #f3f3f3; color: #444; font: 400 12px Calibri, Carlito, Arial, sans-serif; border-right: 1px solid #d4d4d4; border-bottom: 1px solid #d4d4d4; user-select: none; }
+    th { background: #fce7f3; color: #9f1239; font: 700 12px "Trebuchet MS", "Arial Rounded MT Bold", Calibri, Carlito, Arial, sans-serif; border-right: 1px solid #e9a8c6; border-bottom: 1px solid #e9a8c6; user-select: none; }
     thead th { position: sticky; top: 0; z-index: 3; height: 20px; }
     .fila-h { position: sticky; left: 0; z-index: 2; text-align: center; }
     .esquina { left: 0; z-index: 4; }
@@ -285,14 +285,14 @@ const ANCHO_NUMEROS = 40;
     td.sel { box-shadow: inset 0 0 0 2px #7c3aed !important; z-index: 2; }
     .contable { display: flex; justify-content: space-between; gap: 4px; }
     .editor { position: absolute; inset: 0; z-index: 5; width: 100%; height: 100%; box-sizing: border-box; padding: 0 2px; border: 2px solid #7c3aed; outline: none; background: #fff; font: inherit; }
-    .pestanas { position: sticky; bottom: 0; z-index: 10; display: flex; gap: 6px; overflow-x: auto; padding: 8px; background: rgba(255, 255, 255, 0.82); border: 1px solid rgba(236, 72, 153, 0.16); border-radius: 0 0 16px 16px; box-shadow: 0 -8px 20px rgba(88, 28, 135, 0.1); }
-    .pestanas button { flex: 0 0 auto; white-space: nowrap; cursor: pointer; padding: 8px 13px; border: 1px solid rgba(168, 85, 247, 0.16); border-top: 3px solid var(--tab, #d4d4d4); border-radius: 10px; background: rgba(244, 114, 182, 0.1); color: #7c3aed; font: 700 13px Calibri, Carlito, Arial, sans-serif; transition: transform .2s ease, background .2s ease, box-shadow .2s ease; }
-    .pestanas button:hover { transform: translateY(-2px); background: rgba(244, 114, 182, 0.18); }
+    .pestanas { position: sticky; bottom: 0; z-index: 10; display: flex; gap: 6px; overflow-x: auto; padding: 8px; background: #fff; border: 1px solid rgba(236, 72, 153, 0.2); border-radius: 0 0 16px 16px; box-shadow: 0 -8px 20px rgba(88, 28, 135, 0.1); }
+    .pestanas button { flex: 0 0 auto; white-space: nowrap; cursor: pointer; padding: 8px 13px; border: 1px solid rgba(168, 85, 247, 0.2); border-top: 3px solid var(--tab, #d4d4d4); border-radius: 10px; background: #fff5fb; color: #7c3aed; font: 700 13px "Trebuchet MS", "Arial Rounded MT Bold", Calibri, Carlito, Arial, sans-serif; transition: transform .2s ease, background .2s ease, box-shadow .2s ease; }
+    .pestanas button:hover { transform: translateY(-2px); background: #fce7f3; }
     .pestanas button.activa { background: linear-gradient(135deg, #ec4899, #a855f7); color: #fff; box-shadow: 0 5px 12px rgba(168, 85, 247, 0.24); }
     .aviso { position: fixed; right: 20px; bottom: 20px; z-index: 50; max-width: 340px; padding: 10px 14px; border-radius: 14px; background: #3a214e; color: #fff; font-size: 0.9rem; box-shadow: 0 12px 30px rgba(88, 28, 135, 0.2); }
     .menu-fondo { position: fixed; inset: 0; z-index: 60; }
     .menu { position: fixed; z-index: 61; min-width: 220px; padding: 6px; background: #fff; border: 1px solid rgba(236, 72, 153, 0.2); border-radius: 14px; box-shadow: 0 12px 30px rgba(88, 28, 135, 0.16); display: flex; flex-direction: column; }
-    .menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 11px; border: 0; background: transparent; border-radius: 10px; cursor: pointer; font: 600 0.85rem Calibri, Carlito, Arial, sans-serif; color: #3a214e; text-align: left; }
+    .menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 11px; border: 0; background: transparent; border-radius: 10px; cursor: pointer; font: 600 0.85rem "Trebuchet MS", "Arial Rounded MT Bold", Calibri, Carlito, Arial, sans-serif; color: #3a214e; text-align: left; }
     .menu button:hover { background: rgba(244, 114, 182, 0.16); color: #7c3aed; }
     .menu button .ic, .menu button b, .menu button i, .menu button u { display: inline-block; width: 18px; text-align: center; color: #7c3aed; font-style: normal; text-decoration: none; }
     .menu-sep { height: 1px; background: rgba(168, 85, 247, 0.16); margin: 5px 2px; }
