@@ -1,10 +1,83 @@
 import libroJson from './boletos-libro.data.json';
 import { evaluarFormula } from './boletos-formula';
-import { LibroJson, MotorLibro, formatear, fusionarCapturas, redondearExcel } from './boletos-libro';
+import { COLUMNAS_BASE_LIBRO, FILAS_BASE_LIBRO, LibroJson, MotorLibro, altoFila, anchoColumna, columnasDeHoja, formatear, filasDeHoja, fusionarCapturas, redondearExcel } from './boletos-libro';
 
 const libro = libroJson as unknown as LibroJson;
 
 describe('Réplica de PAGO BOLETOS 2026.xlsx', () => {
+
+  it('crea, renombra y elimina una pestaña BASE personalizada sin tocar las 19 originales', () => {
+    const motor = new MotorLibro(libro);
+    const pestana = { id: 'base-nueva', nombre: 'BASE NUEVA' };
+    expect(motor.agregarPersonalizada(pestana)).toBe(true);
+    motor.establecer('BASE NUEVA', 'A1', '42');
+    motor.establecerFormato('BASE NUEVA', 'A1', { b: true });
+    motor.establecer('NORTE 26', 'A1', '=\'BASE NUEVA\'!A1');
+    expect(motor.numero('NORTE 26', 'A1')).toBe(42);
+
+    expect(motor.renombrarPersonalizada('base-nueva', 'BASE RENOMBRADA')).toBe(true);
+    expect(motor.textoEdicion('BASE RENOMBRADA', 'A1')).toBe('42');
+    expect(motor.textoEdicion('NORTE 26', 'A1')).toBe("='BASE RENOMBRADA'!A1");
+    expect(motor.numero('NORTE 26', 'A1')).toBe(42);
+    expect(motor.eliminarPersonalizada('base-nueva')).toBe(false);
+    motor.establecer('NORTE 26', 'A1', '');
+    expect(motor.eliminarPersonalizada('base-nueva')).toBe(true);
+    expect(motor.hojas).toHaveLength(19);
+    expect(motor.esOriginal('BASE NTE 25')).toBe(true);
+    expect(motor.renombrarPersonalizada('missing', 'BASE OTRA')).toBe(false);
+  });
+
+  it('mantiene identificadores y rechaza nombres personalizados duplicados', () => {
+    const motor = new MotorLibro(libro);
+    expect(motor.agregarPersonalizada({ id: 'a', nombre: 'BASE CLIENTE' })).toBe(true);
+    expect(motor.agregarPersonalizada({ id: 'b', nombre: 'BASE CLIENTE' })).toBe(false);
+    expect(motor.personalizadas()).toEqual([{ id: 'a', nombre: 'BASE CLIENTE' }]);
+  });
+
+  it('crea libros con A-Z y 1-200 y permite insertar columnas y filas', () => {
+    const motor = new MotorLibro(libro);
+    expect(motor.agregarPersonalizada({ id: 'amplia', nombre: 'CLIENTE AMPLIA' })).toBe(true);
+    const hoja = motor.hoja('CLIENTE AMPLIA');
+    expect(hoja && columnasDeHoja(hoja)).toHaveLength(COLUMNAS_BASE_LIBRO);
+    expect(hoja && filasDeHoja(hoja)).toHaveLength(FILAS_BASE_LIBRO);
+    expect(motor.insertarColumna('CLIENTE AMPLIA', 0)).toBe(true);
+    expect(motor.hoja('CLIENTE AMPLIA')?.maxCol).toBe(COLUMNAS_BASE_LIBRO + 1);
+    expect(motor.insertarFila('CLIENTE AMPLIA', 1)).toBe(true);
+    expect(motor.hoja('CLIENTE AMPLIA')?.maxRow).toBe(201);
+    expect(motor.insertarFila('CLIENTE AMPLIA', 2)).toBe(true);
+    expect(motor.insertarColumna('CLIENTE AMPLIA', 1)).toBe(true);
+    expect(motor.hoja('CLIENTE AMPLIA')?.maxRow).toBe(202);
+    expect(motor.hoja('CLIENTE AMPLIA')?.maxCol).toBe(COLUMNAS_BASE_LIBRO + 2);
+  });
+
+  it('mantiene la misma rejilla base para hojas importadas y nuevas', () => {
+    const motor = new MotorLibro(libro);
+    expect(columnasDeHoja(motor.hojaInicial())).toHaveLength(COLUMNAS_BASE_LIBRO);
+    expect(filasDeHoja(motor.hojaInicial())).toHaveLength(FILAS_BASE_LIBRO);
+  });
+
+  it('reordena pestañas y reconstruye el mismo orden desde el estado', () => {
+    const motor = new MotorLibro(libro);
+    expect(motor.moverPestana('BASE NTE 25', 'BASE NTE 26')).toBe(true);
+    const orden = motor.ordenPestanas();
+    expect(orden.slice(0, 2)).toEqual(['BASE NTE 26', 'BASE NTE 25']);
+    const recargado = new MotorLibro(libro);
+    recargado.cargarOrden(orden);
+    expect(recargado.ordenPestanas().slice(0, 2)).toEqual(['BASE NTE 26', 'BASE NTE 25']);
+  });
+
+  it('permite renombrar hojas importadas y protege su eliminación si hay referencias', () => {
+    const motor = new MotorLibro(libro);
+    motor.establecer('MANUALES', 'ZZ999', "='BASE NTE 25'!A1");
+    expect(motor.capturas()).toEqual({ 'MANUALES!ZZ999': "='BASE NTE 25'!A1" });
+    expect(motor.renombrarHoja('BASE NTE 25', 'CLIENTE A')).toBe(true);
+    expect(motor.capturas()).toEqual({ 'MANUALES!ZZ999': "='CLIENTE A'!A1" });
+    expect(motor.textoEdicion('MANUALES', 'ZZ999')).toBe("='CLIENTE A'!A1");
+    motor.establecer('MANUALES', 'ZZ999', '');
+    expect(motor.eliminarHoja('CLIENTE A')).toBe(false);
+    expect(motor.hoja('CLIENTE A')).toBeDefined();
+  });
+
   it('trae las 19 hojas en el orden del Excel', () => {
     expect(libro.sheets.map((hoja) => hoja.name.trim())).toEqual([
       'BASE NTE 25',
@@ -158,5 +231,28 @@ describe('Réplica de PAGO BOLETOS 2026.xlsx', () => {
 
     // No se puede eliminar una columna usada por fórmulas (col A alimenta los PAGAR).
     expect(new MotorLibro(libro).eliminarColumna('NORTE 26', 0).ok).toBe(false);
+  });
+
+  it('permite cambiar y reconstruir anchos de columnas y altos de filas', () => {
+    const motor = new MotorLibro(libro);
+    expect(motor.cambiarAnchoColumna('NORTE 26', 9, 180)).toBe(true);
+    expect(motor.cambiarAltoFila('NORTE 26', 3, 48)).toBe(true);
+    expect(anchoColumna(motor.hoja('NORTE 26')!, 'J')).toBe(180);
+    expect(altoFila(motor.hoja('NORTE 26')!, 3)).toBe(48);
+
+    const recargado = new MotorLibro(libro);
+    recargado.aplicarEstructura(motor.estructura());
+    expect(anchoColumna(recargado.hoja('NORTE 26')!, 'J')).toBe(180);
+    expect(altoFila(recargado.hoja('NORTE 26')!, 3)).toBe(48);
+  });
+
+  it('combina celdas vacías, rechaza solapamientos y permite quitar la combinación', () => {
+    const motor = new MotorLibro(libro);
+    expect(motor.agregarPersonalizada({ id: 'fusion', nombre: 'FUSION' })).toBe(true);
+    expect(motor.fusionarCeldas('FUSION', 1, 0, 2, 1)).toBe(true);
+    expect(motor.fusionDe('FUSION', 1, 0)).toEqual({ fila: 1, col: 0, hastaFila: 2, hastaCol: 1 });
+    expect(motor.fusionarCeldas('FUSION', 2, 1, 3, 2)).toBe(false);
+    expect(motor.desfusionarCeldas('FUSION', 1, 0)).toBe(true);
+    expect(motor.puedeDesfusionar('FUSION', 1, 0)).toBe(false);
   });
 });

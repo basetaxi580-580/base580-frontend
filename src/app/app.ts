@@ -1,7 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
 type NavItem = {
   label: string;
@@ -11,7 +10,7 @@ type NavItem = {
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule, RouterLink, RouterLinkActive, RouterOutlet],
+  imports: [CommonModule, RouterLink, RouterLinkActive, RouterOutlet],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
@@ -40,11 +39,8 @@ export class App {
     { label: 'Búsqueda', path: '/buscar', icon: '⌕' },
     { label: 'Credenciales', path: '/credenciales', icon: '◉' },
     { label: 'Engomados', path: '/engomados', icon: '▣' },
-    { label: 'Lista de precios', path: '/lista-precios', icon: '$' },
     { label: 'Validación', path: '/validacion', icon: '✓' },
   ];
-
-  constructor(private readonly router: Router) {}
 
   protected toggleSidebar(): void {
     this.isSidebarOpen = !this.isSidebarOpen;
@@ -76,11 +72,4 @@ export class App {
     this.isSidebarOpen = dx > 0;
   }
 
-  protected submitSearch(query: string): void {
-    const normalized = query.trim();
-    this.closeSidebar();
-    void this.router.navigate(['/buscar'], {
-      queryParams: normalized ? { q: normalized } : {},
-    });
-  }
 }

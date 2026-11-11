@@ -13,7 +13,11 @@ export type EstadoLibro = {
   /** null cuando nunca se ha guardado. */
   version: number | null;
   actualizado: string | null;
+  pestanasPersonalizadas: PestanaPersonalizada[];
+  ordenPestanas: string[];
 };
+
+export type PestanaPersonalizada = { id: string; nombre: string };
 
 /** Cuerpo de un 409: otro equipo guardó antes; trae el estado vigente. */
 export type ConflictoLibro = { error: string; actual: EstadoLibro };
@@ -31,8 +35,10 @@ export class BoletosLibroApiService {
     capturas: Record<string, string>,
     formatos: Record<string, string>,
     estructura: string,
+    pestanasPersonalizadas: PestanaPersonalizada[],
+    ordenPestanas: string[],
     version: number | null,
   ): Observable<EstadoLibro> {
-    return this.http.put<EstadoLibro>(this.url, { capturas, formatos, estructura, version });
+    return this.http.put<EstadoLibro>(this.url, { capturas, formatos, estructura, pestanasPersonalizadas, ordenPestanas, version });
   }
 }

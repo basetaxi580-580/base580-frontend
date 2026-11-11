@@ -12,8 +12,8 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { BoletosLibroApiService, ConflictoLibro, EstadoLibro } from '../data/boletos-libro-api.service';
+import { ActivatedRoute, Router } from '@angular/router';
+import { BoletosLibroApiService, ConflictoLibro, EstadoLibro, PestanaPersonalizada } from '../data/boletos-libro-api.service';
 import { parseTsv } from './boletos-grid';
 import {
   EstiloLibro,
@@ -39,13 +39,18 @@ type CeldaVista = {
   clase: string;
   /** Si el texto se desborda: hacia dónde se alinea (justify-content). */
   flujo?: string;
+  visible: boolean;
+  colspan?: number;
+  rowspan?: number;
 };
 type FilaVista = { n: number; alto: number; celdas: CeldaVista[] };
 type Vista = { cols: { letra: string; ancho: number }[]; filas: FilaVista[]; ancho: number };
 type Seleccion = { fila: number; col: number };
-type MenuCtx = { x: number; y: number; tipo: 'celda' | 'columna'; col: number };
+type Rango = { inicio: Seleccion; fin: Seleccion };
+type Redimension = { tipo: 'col' | 'fila'; indice: number; inicio: number; medida: number; antes: Instantanea };
+type MenuCtx = { x: number; y: number; tipo: 'celda' | 'columna' | 'fila' | 'pestana'; col: number; fila?: number; nombre?: string };
 type EstadoGuardado = 'cargando' | 'guardado' | 'guardando' | 'pendiente' | 'error' | 'sin-conexion';
-type Instantanea = { estructura: string; capturas: Record<string, string>; formatos: Record<string, string> };
+type Instantanea = { estructura: string; capturas: Record<string, string>; formatos: Record<string, string>; pestanas: PestanaPersonalizada[]; ordenPestanas: string[] };
 type Respaldo = { base: Instantanea; actual: Instantanea };
 
 const CLAVE_RESPALDO = 'boletos-libro-respaldo';
@@ -57,7 +62,7 @@ const ANCHO_NUMEROS = 40;
 
 @Component({
   selector: 'app-boletos-libro',
-  imports: [RouterLink],
+  imports: [],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="libro">
@@ -78,7 +83,6 @@ const ANCHO_NUMEROS = 40;
           } @else {
             <button type="button" [disabled]="!hojaConCapturas()" (click)="confirmandoRestaurar.set(true)">Restaurar hoja</button>
           }
-          <a routerLink="/boletos/anterior">Versión anterior</a>
         </div>
       </header>
 
@@ -147,18 +151,20 @@ const ANCHO_NUMEROS = 40;
               <tr>
                 <th class="esquina"></th>
                 @for (c of v.cols; track c.letra; let ci = $index) {
-                  <th [class.activa]="ci === sel().col" (contextmenu)="menuColumna(ci, $event)">{{ c.letra }}</th>
+                  <th [class.activa]="ci === sel().col" (contextmenu)="menuColumna(ci, $event)">{{ c.letra }}<span class="resize-col" (mousedown)="iniciarRedimensionColumna(ci, $event)" aria-hidden="true"></span></th>
                 }
               </tr>
             </thead>
             <tbody>
               @for (f of v.filas; track f.n; let fi = $index) {
                 <tr [style.height.px]="f.alto">
-                  <th class="fila-h" [class.activa]="fi === sel().fila">{{ f.n }}</th>
+                  <th class="fila-h" [class.activa]="fi === sel().fila" (contextmenu)="menuFila(fi, $event)">{{ f.n }}<span class="resize-row" (mousedown)="iniciarRedimensionFila(fi, $event)" aria-hidden="true"></span></th>
                   @for (c of f.celdas; track c.ref; let ci = $index) {
-                    <td
+                    @if (c.visible) {<td
                       [class]="c.clase"
-                      [class.sel]="fi === sel().fila && ci === sel().col"
+                      [class.sel]="esSeleccionada(fi, ci)"
+                      [attr.colspan]="c.colspan ?? null"
+                      [attr.rowspan]="c.rowspan ?? null"
                       [style]="c.css"
                       (mousedown)="seleccionar(fi, ci, $event)"
                       (dblclick)="editarActual()"
@@ -181,7 +187,7 @@ const ANCHO_NUMEROS = 40;
                       } @else {
                         <span class="txt">{{ c.texto }}</span>
                       }
-                    </td>
+                    </td>}
                   }
                 </tr>
               }
@@ -189,9 +195,9 @@ const ANCHO_NUMEROS = 40;
           </table>
         </div>
 
-        <nav class="pestanas" aria-label="Hojas del libro">
+        <nav class="pestanas" aria-label="Hojas del libro" (contextmenu)="menuPestana(null, $event)">
           @for (h of hojas(); track h.name) {
-            <button type="button" [class.activa]="h.name === hoja()?.name" [style.--tab]="h.tab" (mousedown)="tabMousedown($event)" (click)="irAHoja(h.name)">
+            <button type="button" draggable="true" [class.activa]="h.name === hoja()?.name" [style.--tab]="h.tab" (dragstart)="arrastrarPestana(h.name, $event)" (dragover)="permitirSoltar($event)" (drop)="soltarPestana(h.name, $event)" (mousedown)="tabMousedown($event)" (click)="irAHoja(h.name)" (contextmenu)="menuPestana(h.name, $event)">
               {{ h.name.trim() }}
             </button>
           }
@@ -207,10 +213,22 @@ const ANCHO_NUMEROS = 40;
       @if (menu(); as m) {
         <div class="menu-fondo" (mousedown)="cerrarMenu()" (contextmenu)="$event.preventDefault(); cerrarMenu()"></div>
         <div class="menu" role="menu" [style.left.px]="m.x" [style.top.px]="m.y" (mousedown)="$event.stopPropagation()">
-          @if (m.tipo === 'celda') {
+          @if (m.tipo === 'pestana') {
+            <button type="button" role="menuitem" (click)="agregarPestana(); cerrarMenu()"><span class="ic">＋</span><span>Añadir libro</span></button>
+            <button type="button" role="menuitem" (click)="renombrarPestana(); cerrarMenu()"><span class="ic">✎</span><span>Cambiar nombre</span></button>
+            <button type="button" role="menuitem" (click)="eliminarPestana(); cerrarMenu()"><span class="ic">✕</span><span>Eliminar</span></button>
+          } @else if (m.tipo === 'celda') {
             <button type="button" role="menuitem" (click)="alternar('b'); cerrarMenu()"><b>N</b><span>Negrita</span></button>
             <button type="button" role="menuitem" (click)="alternar('i'); cerrarMenu()"><i>K</i><span>Cursiva</span></button>
             <button type="button" role="menuitem" (click)="alternar('u'); cerrarMenu()"><u>S</u><span>Subrayado</span></button>
+            <div class="menu-sep"></div>
+            <div class="menu-grupo">
+              <button type="button" role="menuitem" class="submenu-trigger"><span class="ic">▦</span><span>Opciones de formato</span></button>
+              <div class="submenu" role="menu">
+                <button type="button" role="menuitem" [disabled]="!puedeCombinar()" (click)="combinarCeldas(); cerrarMenu()"><span class="ic">⊞</span><span>Combinar celdas</span></button>
+                <button type="button" role="menuitem" [disabled]="!puedeDescombinar()" (click)="descombinarCeldas(); cerrarMenu()"><span class="ic">⊟</span><span>Quitar combinación</span></button>
+              </div>
+            </div>
             <div class="menu-sep"></div>
             <button type="button" role="menuitem" (click)="alinear('left'); cerrarMenu()"><span class="ic">⟸</span><span>Alinear a la izquierda</span></button>
             <button type="button" role="menuitem" (click)="alinear('center'); cerrarMenu()"><span class="ic">≡</span><span>Centrar</span></button>
@@ -218,11 +236,16 @@ const ANCHO_NUMEROS = 40;
             <div class="menu-sep"></div>
             <button type="button" role="menuitem" (click)="limpiarFormatoActual(); cerrarMenu()"><span class="ic">⌫</span><span>Quitar formato</span></button>
             <button type="button" role="menuitem" (click)="borrarCelda(); cerrarMenu()"><span class="ic">⌦</span><span>Borrar contenido</span></button>
-          } @else {
+          } @else if (m.tipo === 'columna') {
             <button type="button" role="menuitem" (click)="insertarColumna('izq')"><span class="ic">▮</span><span>Insertar columna a la izquierda</span></button>
             <button type="button" role="menuitem" (click)="insertarColumna('der')"><span class="ic">▮</span><span>Insertar columna a la derecha</span></button>
             <div class="menu-sep"></div>
             <button type="button" role="menuitem" (click)="eliminarColumna()"><span class="ic">✕</span><span>Eliminar columna</span></button>
+          } @else {
+            <button type="button" role="menuitem" (click)="insertarFila('arriba')"><span class="ic">＋</span><span>Agregar fila arriba</span></button>
+            <button type="button" role="menuitem" (click)="insertarFila('abajo')"><span class="ic">＋</span><span>Agregar fila abajo</span></button>
+            <div class="menu-sep"></div>
+            <button type="button" role="menuitem" (click)="eliminarFila()"><span class="ic">✕</span><span>Eliminar fila</span></button>
           }
         </div>
       }
@@ -231,62 +254,79 @@ const ANCHO_NUMEROS = 40;
   styles: `
     /* contain: el ancho de la tabla no empuja el layout; el scroll queda dentro de la rejilla. */
     :host { display: block; contain: inline-size; }
-    .libro { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    .libro { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 10px; border-radius: 20px; color: #463255; background: #fff; }
+    .barra, .fx, .formato { border: 1px solid rgba(236, 72, 153, 0.2); background: #fff; box-shadow: 0 8px 24px rgba(88, 28, 135, 0.08); }
+    .barra { padding: 12px 14px; border-radius: 18px; }
     .barra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
     h1 { margin: 0; font-size: 1.25rem; color: #3a214e; }
     .fuente { font-size: 0.8rem; color: #7c3aed; }
     .acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-    .acciones button, .acciones a { border: 1px solid rgba(124, 58, 237, 0.25); background: #fff; color: #7c3aed; border-radius: 10px; padding: 6px 10px; font-weight: 700; font-size: 0.85rem; text-decoration: none; cursor: pointer; }
+    .acciones button, .acciones a { border: 1px solid rgba(124, 58, 237, 0.2); background: rgba(244, 114, 182, 0.1); color: #7c3aed; border-radius: 999px; padding: 7px 11px; font-weight: 700; font-size: 0.85rem; text-decoration: none; cursor: pointer; }
     .acciones button:disabled { opacity: 0.45; cursor: default; }
-    .acciones .guardar { background: #217346; border-color: #217346; color: #fff; }
-    .acciones .guardar:disabled { background: #fff; color: #217346; }
+    .acciones .guardar { background: linear-gradient(135deg, #ec4899, #a855f7); border-color: transparent; color: #fff; }
+    .acciones .guardar:disabled { background: rgba(244, 114, 182, 0.1); color: #7c3aed; }
     .acciones .peligro { background: #b91c1c; border-color: #b91c1c; color: #fff; }
     .confirmar { font-size: 0.85rem; color: #3a214e; }
     .estado { font-size: 0.8rem; padding: 4px 10px; border-radius: 999px; background: #ede9fe; color: #5b21b6; }
     .estado.guardado { background: #dcfce7; color: #166534; }
     .estado.error, .estado.sin-conexion { background: #fee2e2; color: #991b1b; }
-    .fx { display: flex; align-items: center; gap: 6px; border: 1px solid #d4d4d4; background: #fff; border-radius: 8px; padding: 4px 6px; }
+    .fx { display: flex; align-items: center; gap: 6px; border-radius: 14px; padding: 6px 8px; }
     .ref { min-width: 56px; padding-right: 6px; border-right: 1px solid #e5e5e5; text-align: center; font: 600 13px Calibri, Carlito, Arial, sans-serif; }
     .fx-ico { font-style: italic; color: #6b7280; }
     .fx-input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font: 14px Calibri, Carlito, Arial, sans-serif; }
     .candado { white-space: nowrap; font-size: 0.75rem; color: #92400e; background: #fef3c7; border-radius: 6px; padding: 2px 6px; }
     .apuntar { white-space: nowrap; font-size: 0.75rem; color: #0f5132; background: #d3e9dc; border-radius: 6px; padding: 2px 8px; }
-    .formato { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; border: 1px solid #d4d4d4; background: #fff; border-radius: 8px; padding: 4px 6px; }
-    .formato button { min-width: 30px; height: 28px; border: 1px solid transparent; background: transparent; color: #333; border-radius: 6px; cursor: pointer; font-size: 0.9rem; line-height: 1; padding: 0 6px; }
-    .formato button:hover { background: #f3f0fa; }
-    .formato button.on { background: #ede9fe; border-color: #7c3aed; color: #5b21b6; }
-    .formato select { height: 28px; border: 1px solid #d4d4d4; border-radius: 6px; background: #fff; font-size: 0.85rem; }
-    .formato .color { display: inline-flex; align-items: center; gap: 2px; height: 28px; padding: 0 4px; border: 1px solid #d4d4d4; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+    .formato { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; border-radius: 16px; padding: 7px 8px; }
+    .formato button { min-width: 30px; height: 30px; border: 1px solid transparent; background: transparent; color: #3a214e; border-radius: 9px; cursor: pointer; font-size: 0.9rem; line-height: 1; padding: 0 7px; }
+    .formato button:hover, .formato button.on { background: rgba(244, 114, 182, 0.18); color: #7c3aed; }
+    .formato button.on { border-color: rgba(124, 58, 237, 0.35); }
+    .formato select { height: 30px; border: 1px solid rgba(168, 85, 247, 0.2); border-radius: 9px; background: #fff; color: #3a214e; font-size: 0.85rem; }
+    .formato .color { display: inline-flex; align-items: center; gap: 2px; height: 30px; padding: 0 5px; border: 1px solid rgba(168, 85, 247, 0.2); border-radius: 9px; cursor: pointer; font-size: 0.85rem; color: #7c3aed; }
     .formato .color input { width: 22px; height: 20px; border: 0; background: transparent; padding: 0; cursor: pointer; }
     .formato .sep { width: 1px; align-self: stretch; background: #e5e5e5; margin: 2px; }
-    .rejilla { overflow: auto; max-height: calc(100vh - 250px); min-height: 320px; border: 1px solid #d4d4d4; background: #fff; outline: none; }
-    .rejilla:focus-visible { box-shadow: 0 0 0 2px rgba(33, 115, 70, 0.35); }
-    table { border-collapse: separate; border-spacing: 0; table-layout: fixed; font: 11pt Calibri, Carlito, Arial, sans-serif; color: #000; }
+    .rejilla { overflow: auto; max-height: calc(100vh - 250px); min-height: 320px; border: 1px solid rgba(236, 72, 153, 0.2); border-radius: 16px 16px 0 0; background: #fff; outline: none; box-shadow: 0 10px 28px rgba(88, 28, 135, 0.08); }
+    .rejilla:focus-visible { box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.24), 0 10px 28px rgba(88, 28, 135, 0.08); }
+    table { border-collapse: separate; border-spacing: 0; table-layout: fixed; font: 11pt "Trebuchet MS", "Arial Rounded MT Bold", Calibri, Carlito, Arial, sans-serif; color: #000; }
     col.c-num { width: 40px; }
-    th { background: #f3f3f3; color: #444; font: 400 12px Calibri, Carlito, Arial, sans-serif; border-right: 1px solid #d4d4d4; border-bottom: 1px solid #d4d4d4; user-select: none; }
+    th { position: relative; background: #fce7f3; color: #9f1239; font: 700 12px "Trebuchet MS", "Arial Rounded MT Bold", Calibri, Carlito, Arial, sans-serif; border-right: 1px solid #e9a8c6; border-bottom: 1px solid #e9a8c6; user-select: none; }
     thead th { position: sticky; top: 0; z-index: 3; height: 20px; }
     .fila-h { position: sticky; left: 0; z-index: 2; text-align: center; }
     .esquina { left: 0; z-index: 4; }
-    th.activa { background: #d3e9dc; color: #0f5132; font-weight: 700; }
+    th.activa { background: #fce7f3; color: #9f1239; font-weight: 700; }
     td { position: relative; padding: 0 3px; overflow: hidden; white-space: nowrap; vertical-align: bottom; border-right: 1px solid #e1e1e1; border-bottom: 1px solid #e1e1e1; cursor: cell; }
     td.desborda { overflow: visible; }
     .flujo { display: flex; width: 100%; }
     .flujo .txt { flex: none; position: relative; z-index: 1; white-space: nowrap; }
-    td.sel { box-shadow: inset 0 0 0 2px #217346 !important; z-index: 2; }
+    td.sel { box-shadow: inset 0 0 0 2px #7c3aed !important; z-index: 2; }
+    .resize-col, .resize-row { position: absolute; z-index: 6; display: block; background: transparent; }
+    .resize-col { top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; }
+    .resize-row { left: 0; right: 0; bottom: -4px; height: 8px; cursor: row-resize; }
+    .resize-col:hover, .resize-row:hover { background: #ec4899; }
     .contable { display: flex; justify-content: space-between; gap: 4px; }
-    .editor { position: absolute; inset: 0; z-index: 5; width: 100%; height: 100%; box-sizing: border-box; padding: 0 2px; border: 2px solid #217346; outline: none; background: #fff; font: inherit; }
-    .pestanas { display: flex; gap: 2px; overflow-x: auto; padding-bottom: 4px; }
-    .pestanas button { flex: 0 0 auto; white-space: nowrap; cursor: pointer; padding: 6px 12px; border: 1px solid #d4d4d4; border-top: 3px solid var(--tab, #d4d4d4); border-radius: 0 0 6px 6px; background: #f3f3f3; color: #333; font: 600 13px Calibri, Carlito, Arial, sans-serif; }
-    .pestanas button.activa { background: #fff; color: #217346; box-shadow: inset 0 -2px 0 #217346; }
-    .aviso { position: fixed; right: 20px; bottom: 20px; z-index: 50; max-width: 340px; padding: 10px 14px; border-radius: 12px; background: #3a214e; color: #fff; font-size: 0.9rem; }
+    .editor { position: absolute; inset: 0; z-index: 5; width: 100%; height: 100%; box-sizing: border-box; padding: 0 2px; border: 2px solid #7c3aed; outline: none; background: #fff; font: inherit; }
+    .pestanas { position: sticky; bottom: 0; z-index: 10; display: flex; gap: 6px; overflow-x: auto; padding: 8px; background: #fff; border: 1px solid rgba(236, 72, 153, 0.2); border-radius: 0 0 16px 16px; box-shadow: 0 -8px 20px rgba(88, 28, 135, 0.1); }
+    .pestanas button { flex: 0 0 auto; white-space: nowrap; cursor: pointer; padding: 8px 13px; border: 1px solid rgba(168, 85, 247, 0.2); border-top: 3px solid var(--tab, #d4d4d4); border-radius: 10px; background: #fff5fb; color: #7c3aed; font: 700 13px "Trebuchet MS", "Arial Rounded MT Bold", Calibri, Carlito, Arial, sans-serif; transition: transform .2s ease, background .2s ease, box-shadow .2s ease; }
+    .pestanas button:hover { transform: translateY(-2px); background: #fce7f3; }
+    .pestanas button.activa { background: linear-gradient(135deg, #ec4899, #a855f7); color: #fff; box-shadow: 0 5px 12px rgba(168, 85, 247, 0.24); }
+    .aviso { position: fixed; right: 20px; bottom: 20px; z-index: 50; max-width: 340px; padding: 10px 14px; border-radius: 14px; background: #3a214e; color: #fff; font-size: 0.9rem; box-shadow: 0 12px 30px rgba(88, 28, 135, 0.2); }
     .menu-fondo { position: fixed; inset: 0; z-index: 60; }
-    .menu { position: fixed; z-index: 61; min-width: 200px; padding: 4px; background: #fff; border: 1px solid #d4d4d4; border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); display: flex; flex-direction: column; }
-    .menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 10px; border: 0; background: transparent; border-radius: 6px; cursor: pointer; font: 500 0.85rem Calibri, Carlito, Arial, sans-serif; color: #333; text-align: left; }
-    .menu button:hover { background: #f3f0fa; color: #5b21b6; }
+    .menu { position: fixed; z-index: 61; min-width: 220px; padding: 6px; background: #fff; border: 1px solid rgba(236, 72, 153, 0.2); border-radius: 14px; box-shadow: 0 12px 30px rgba(88, 28, 135, 0.16); display: flex; flex-direction: column; }
+    .menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 11px; border: 0; background: transparent; border-radius: 10px; cursor: pointer; font: 600 0.85rem "Trebuchet MS", "Arial Rounded MT Bold", Calibri, Carlito, Arial, sans-serif; color: #3a214e; text-align: left; }
+    .menu button:hover { background: rgba(244, 114, 182, 0.16); color: #7c3aed; }
+    .menu button:disabled { opacity: .45; cursor: not-allowed; }
     .menu button .ic, .menu button b, .menu button i, .menu button u { display: inline-block; width: 18px; text-align: center; color: #7c3aed; font-style: normal; text-decoration: none; }
-    .menu-sep { height: 1px; background: #e5e5e5; margin: 4px 2px; }
+    .menu-grupo { position: relative; }
+    .submenu-trigger::after { content: '›'; margin-left: auto; color: #a855f7; font-size: 1.1rem; }
+    .submenu { position: absolute; left: calc(100% + 5px); top: -6px; display: none; min-width: 210px; padding: 6px; background: #fff; border: 1px solid rgba(236, 72, 153, 0.2); border-radius: 14px; box-shadow: 0 12px 30px rgba(88, 28, 135, 0.16); }
+    .menu-grupo:hover > .submenu, .menu-grupo:focus-within > .submenu { display: flex; flex-direction: column; }
+    .menu-sep { height: 1px; background: rgba(168, 85, 247, 0.16); margin: 5px 2px; }
     .error { color: #991b1b; }
     .cargando { color: #7c3aed; }
+    @media (max-width: 700px) {
+      .barra { align-items: stretch; }
+      .acciones { justify-content: flex-start; }
+      .rejilla { max-height: calc(100vh - 310px); }
+    }
   `,
 })
 export class BoletosLibroPage implements OnInit {
@@ -303,6 +343,7 @@ export class BoletosLibroPage implements OnInit {
   /** Se incrementa en cada cambio de capturas para recalcular la vista. */
   protected readonly cambios = signal(0);
   protected readonly sel = signal<Seleccion>({ fila: 0, col: 0 });
+  protected readonly rangoSeleccion = signal<Rango | null>(null);
   /** Texto del editor en celda; null cuando no se edita. */
   protected readonly editando = signal<string | null>(null);
   /** Menú contextual abierto (click derecho); null cuando está cerrado. */
@@ -316,8 +357,12 @@ export class BoletosLibroPage implements OnInit {
   protected readonly confirmandoRestaurar = signal(false);
   private readonly historial = signal({ deshacer: 0, rehacer: 0 });
 
-  protected readonly hojas = computed(() => this.motor()?.hojas ?? []);
+  protected readonly hojas = computed(() => {
+    this.cambios();
+    return this.motor()?.hojas ?? [];
+  });
   protected readonly hoja = computed<HojaLibro | null>(() => {
+    this.cambios();
     const motor = this.motor();
     if (!motor) return null;
     return motor.hoja(this.hojaNombre()) ?? motor.hojaInicial();
@@ -375,6 +420,8 @@ export class BoletosLibroPage implements OnInit {
       !mismasCapturas(motor.capturas(), this.base) ||
       !mismasCapturas(this.serializarFormatos(motor.formatos()), this.baseFormatos) ||
       JSON.stringify(motor.estructura()) !== this.baseEstructura
+      || !mismasPestanas(motor.personalizadas(), this.basePestanas)
+      || !mismoOrden(motor.ordenPestanas(), this.baseOrden)
     );
   });
   /** Estilo efectivo de la celda activa (para pintar la barra de formato). */
@@ -415,6 +462,9 @@ export class BoletosLibroPage implements OnInit {
   private baseFormatos: Record<string, string> = {};
   /** Última estructura (operaciones de columna) confirmada por el servidor, como JSON. */
   private baseEstructura = '[]';
+  private basePestanas: PestanaPersonalizada[] = [];
+  private baseOrden: string[] = [];
+  private arrastrandoPestana: string | null = null;
   private guardando = false;
   private repetir = false;
   private conflictos = 0;
@@ -429,6 +479,7 @@ export class BoletosLibroPage implements OnInit {
   private objetivo: { hoja: string; ref: string } | null = null;
   /** true cuando la edición empezó tecleando (las flechas confirman y mueven, como en Excel). */
   private modoEntrada = false;
+  private redimensionando: Redimension | null = null;
 
   constructor() {
     // El editor aparece en el siguiente render: enfocarlo en cuanto existe.
@@ -470,6 +521,64 @@ export class BoletosLibroPage implements OnInit {
   @HostListener('document:keydown.escape')
   protected cerrarMenuEsc(): void {
     this.cerrarMenu();
+    this.terminarRedimension();
+  }
+
+  protected iniciarRedimensionColumna(ci: number, event: MouseEvent): void {
+    if (event.button !== 0) return;
+    const vista = this.vista();
+    const columna = vista?.cols[ci];
+    if (!columna) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.confirmarEdicion();
+    this.confirmarBarra();
+    this.cerrarMenu();
+    this.redimensionando = { tipo: 'col', indice: ci, inicio: event.clientX, medida: columna.ancho, antes: this.instantanea() };
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+  }
+
+  protected iniciarRedimensionFila(fi: number, event: MouseEvent): void {
+    if (event.button !== 0) return;
+    const vista = this.vista();
+    const fila = vista?.filas[fi];
+    if (!fila) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.confirmarEdicion();
+    this.confirmarBarra();
+    this.cerrarMenu();
+    this.redimensionando = { tipo: 'fila', indice: fi, inicio: event.clientY, medida: fila.alto, antes: this.instantanea() };
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'row-resize';
+  }
+
+  @HostListener('window:mousemove', ['$event'])
+  protected moverRedimension(event: MouseEvent): void {
+    const estado = this.redimensionando;
+    const motor = this.motor();
+    const hoja = this.hoja();
+    if (!estado || !motor || !hoja) return;
+    const delta = (estado.tipo === 'col' ? event.clientX : event.clientY) - estado.inicio;
+    const medida = estado.medida + delta;
+    const cambio = estado.tipo === 'col'
+      ? motor.cambiarAnchoColumna(hoja.name, estado.indice, medida)
+      : motor.cambiarAltoFila(hoja.name, (this.vista()?.filas[estado.indice]?.n ?? 0), medida);
+    if (cambio) this.cambios.update((n) => n + 1);
+  }
+
+  @HostListener('window:mouseup')
+  protected terminarRedimension(): void {
+    const estado = this.redimensionando;
+    if (!estado) return;
+    this.redimensionando = null;
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    if (!this.mismasInstantaneas(estado.antes, this.instantanea())) {
+      this.registrarDeshacer(estado.antes);
+      this.trasCambio();
+    }
   }
 
   @HostListener('window:beforeunload', ['$event'])
@@ -480,6 +589,8 @@ export class BoletosLibroPage implements OnInit {
       !mismasCapturas(motor.capturas(), this.base) ||
       !mismasCapturas(this.serializarFormatos(motor.formatos()), this.baseFormatos) ||
       JSON.stringify(motor.estructura()) !== this.baseEstructura
+      || !mismasPestanas(motor.personalizadas(), this.basePestanas)
+      || !mismoOrden(motor.ordenPestanas(), this.baseOrden)
     ) {
       event.preventDefault();
     }
@@ -501,6 +612,78 @@ export class BoletosLibroPage implements OnInit {
     void this.router.navigate([], { relativeTo: this.route, queryParams: { hoja: nombre.trim() }, replaceUrl: true });
     if (apuntando) this.enfocarBarra();
     else this.enfocarRejilla();
+  }
+
+  protected menuPestana(nombre: string | null, event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = Math.max(4, Math.min(rect.left, window.innerWidth - 220));
+    const y = Math.max(8, rect.top - 104);
+    this.menu.set({ x, y, tipo: 'pestana', col: -1, nombre: nombre ?? undefined });
+  }
+
+  protected arrastrarPestana(nombre: string, event: DragEvent): void {
+    this.arrastrandoPestana = nombre;
+    event.dataTransfer?.setData('text/plain', nombre);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  }
+
+  protected permitirSoltar(event: DragEvent): void {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+  }
+
+  protected soltarPestana(destino: string, event: DragEvent): void {
+    event.preventDefault();
+    const origen = this.arrastrandoPestana ?? event.dataTransfer?.getData('text/plain') ?? null;
+    this.arrastrandoPestana = null;
+    const motor = this.motor();
+    if (!motor || !origen || origen === destino) return;
+    if (motor.moverPestana(origen, destino)) {
+      this.cambios.update((n) => n + 1);
+      this.trasCambio();
+    }
+  }
+
+  protected agregarPestana(): void {
+    const valor = window.prompt('Nombre de la nueva base:');
+    const texto = valor?.trim() ?? '';
+    if (!texto || texto.includes('!') || texto.length > 64) { if (valor !== null) this.avisar('El nombre debe tener entre 1 y 64 caracteres y no contener !.'); return; }
+    const nombre = texto;
+    const motor = this.motor();
+    if (!motor || motor.hoja(nombre)) { this.avisar('Ya existe una pestaña con ese nombre.'); return; }
+    const pestana = { id: crearIdPestana(), nombre };
+    motor.agregarPersonalizada(pestana);
+    this.trasCambio();
+    this.irAHoja(nombre);
+  }
+
+  protected renombrarPestana(): void {
+    const nombre = this.menu()?.nombre;
+    const motor = this.motor();
+    const pestana = motor?.personalizadas().find((p) => p.nombre === nombre);
+    if (!motor || !nombre) return;
+    const valor = window.prompt('Nuevo nombre de la base:', nombre);
+    const texto = valor?.trim() ?? '';
+    if (!texto || texto.includes('!') || texto.length > 64) { if (valor !== null) this.avisar('El nombre debe tener entre 1 y 64 caracteres y no contener !.'); return; }
+    const nuevo = texto;
+    const ok = pestana ? motor.renombrarPersonalizada(pestana.id, nuevo) : motor.renombrarHoja(nombre, nuevo);
+    if (!ok) { this.avisar('Ya existe una pestaña con ese nombre.'); return; }
+    if (this.hojaNombre() === nombre) this.hojaNombre.set(nuevo);
+    this.trasCambio();
+  }
+
+  protected eliminarPestana(): void {
+    const nombre = this.menu()?.nombre;
+    const motor = this.motor();
+    const pestana = motor?.personalizadas().find((p) => p.nombre === nombre);
+    if (!motor || !nombre) return;
+    if (!window.confirm(`¿Eliminar ${nombre}?`)) return;
+    const ok = pestana ? motor.eliminarPersonalizada(pestana.id) : motor.eliminarHoja(nombre);
+    if (!ok) { this.avisar('No se puede eliminar: una fórmula todavía referencia esta pestaña.'); return; }
+    if (this.hojaNombre() === nombre) this.hojaNombre.set(motor.hojaInicial().name);
+    this.trasCambio();
   }
 
   protected tabMousedown(event: MouseEvent): void {
@@ -578,6 +761,77 @@ export class BoletosLibroPage implements OnInit {
     this.confirmarEdicion();
     this.confirmarBarra();
     this.sel.set({ fila, col });
+    if (event.shiftKey) {
+      const inicio = this.rangoSeleccion()?.inicio ?? this.sel();
+      this.rangoSeleccion.set({ inicio, fin: { fila, col } });
+    } else {
+      this.rangoSeleccion.set({ inicio: { fila, col }, fin: { fila, col } });
+    }
+  }
+
+  protected esSeleccionada(fila: number, col: number): boolean {
+    const rango = this.rangoSeleccion();
+    if (!rango) return fila === this.sel().fila && col === this.sel().col;
+    const minFila = Math.min(rango.inicio.fila, rango.fin.fila);
+    const maxFila = Math.max(rango.inicio.fila, rango.fin.fila);
+    const minCol = Math.min(rango.inicio.col, rango.fin.col);
+    const maxCol = Math.max(rango.inicio.col, rango.fin.col);
+    return fila >= minFila && fila <= maxFila && col >= minCol && col <= maxCol;
+  }
+
+  protected puedeCombinar(): boolean {
+    const rango = this.rangoActivo();
+    const motor = this.motor();
+    const hoja = this.hoja();
+    return !!rango && !!motor && !!hoja && (rango.hastaFila > rango.fila || rango.hastaCol > rango.col) && !motor.fusionDe(hoja.name, rango.fila, rango.col);
+  }
+
+  protected puedeDescombinar(): boolean {
+    const rango = this.rangoActivo();
+    const motor = this.motor();
+    const hoja = this.hoja();
+    return !!rango && !!motor && !!hoja && motor.puedeDesfusionar(hoja.name, rango.fila, rango.col);
+  }
+
+  protected combinarCeldas(): void {
+    const motor = this.motor();
+    const hoja = this.hoja();
+    const rango = this.rangoActivo();
+    if (!motor || !hoja || !rango || !this.puedeCombinar()) return;
+    const antes = this.instantanea();
+    if (!motor.fusionarCeldas(hoja.name, rango.fila, rango.col, rango.hastaFila, rango.hastaCol)) {
+      this.avisar('Solo se pueden combinar celdas vacías y sin otra combinación encima.');
+      return;
+    }
+    this.registrarDeshacer(antes);
+    this.trasCambio();
+    this.avisar('Celdas combinadas.');
+  }
+
+  protected descombinarCeldas(): void {
+    const motor = this.motor();
+    const hoja = this.hoja();
+    const rango = this.rangoActivo();
+    if (!motor || !hoja || !rango || !this.puedeDescombinar()) return;
+    const antes = this.instantanea();
+    if (!motor.desfusionarCeldas(hoja.name, rango.fila, rango.col)) return;
+    this.registrarDeshacer(antes);
+    this.trasCambio();
+    this.avisar('Combinación retirada.');
+  }
+
+  private rangoActivo(): { fila: number; col: number; hastaFila: number; hastaCol: number } | null {
+    const rango = this.rangoSeleccion();
+    const vista = this.vista();
+    if (!rango || !vista) return null;
+    const inicioFila = Math.min(rango.inicio.fila, rango.fin.fila);
+    const finFila = Math.max(rango.inicio.fila, rango.fin.fila);
+    const inicioCol = Math.min(rango.inicio.col, rango.fin.col);
+    const finCol = Math.max(rango.inicio.col, rango.fin.col);
+    const fila = vista.filas[inicioFila]?.n;
+    const hastaFila = vista.filas[finFila]?.n;
+    if (fila == null || hastaFila == null) return null;
+    return { fila, col: inicioCol, hastaFila, hastaCol: finCol };
   }
 
   /** Inserta la referencia de la celda clicada dentro de la fórmula en edición (como Excel). */
@@ -648,7 +902,10 @@ export class BoletosLibroPage implements OnInit {
     event.preventDefault();
     this.confirmarEdicion();
     this.confirmarBarra();
-    this.sel.set({ fila, col });
+    if (!this.esSeleccionada(fila, col)) {
+      this.sel.set({ fila, col });
+      this.rangoSeleccion.set({ inicio: { fila, col }, fin: { fila, col } });
+    }
     const x = Math.max(4, Math.min(event.clientX, window.innerWidth - 212));
     this.menu.set({ x, y: event.clientY, tipo: 'celda', col });
   }
@@ -671,6 +928,18 @@ export class BoletosLibroPage implements OnInit {
     this.sel.update((s) => ({ fila: s.fila, col: ci }));
     const x = Math.max(4, Math.min(event.clientX, window.innerWidth - 252));
     this.menu.set({ x, y: event.clientY, tipo: 'columna', col: indiceColumna(letra) });
+  }
+
+  protected menuFila(fi: number, event: MouseEvent): void {
+    event.preventDefault();
+    this.confirmarEdicion();
+    this.confirmarBarra();
+    const vista = this.vista();
+    const fila = vista?.filas[fi]?.n;
+    if (!fila) return;
+    this.sel.update((s) => ({ fila: fi, col: s.col }));
+    const x = Math.max(4, Math.min(event.clientX, window.innerWidth - 220));
+    this.menu.set({ x, y: event.clientY, tipo: 'fila', col: -1, fila });
   }
 
   protected insertarColumna(lado: 'izq' | 'der'): void {
@@ -702,6 +971,37 @@ export class BoletosLibroPage implements OnInit {
     this.registrarDeshacer(antes);
     this.trasCambio();
     this.avisar(`Columna eliminada en ${hoja.name.trim()}.`);
+  }
+
+  protected insertarFila(lado: 'arriba' | 'abajo'): void {
+    const motor = this.motor();
+    const hoja = this.hoja();
+    const menu = this.menu();
+    this.cerrarMenu();
+    if (!motor || !hoja || !menu || menu.fila == null) return;
+    const fila = lado === 'arriba' ? menu.fila : menu.fila + 1;
+    const antes = this.instantanea();
+    if (!motor.insertarFila(hoja.name, fila)) return;
+    this.registrarDeshacer(antes);
+    this.trasCambio();
+    this.avisar(`Fila insertada en ${hoja.name.trim()}.`);
+  }
+
+  protected eliminarFila(): void {
+    const motor = this.motor();
+    const hoja = this.hoja();
+    const menu = this.menu();
+    this.cerrarMenu();
+    if (!motor || !hoja || !menu || menu.fila == null) return;
+    const antes = this.instantanea();
+    const resultado = motor.eliminarFila(hoja.name, menu.fila);
+    if (!resultado.ok) {
+      this.avisar(resultado.motivo ?? 'No se pudo eliminar la fila.');
+      return;
+    }
+    this.registrarDeshacer(antes);
+    this.trasCambio();
+    this.avisar(`Fila eliminada en ${hoja.name.trim()}.`);
   }
 
   protected editarActual(inicial?: string): void {
@@ -945,7 +1245,7 @@ export class BoletosLibroPage implements OnInit {
     const prefijo = `${hoja.name}!`;
     const sinHoja = (m: Record<string, string>) => Object.fromEntries(Object.entries(m).filter(([clave]) => !clave.startsWith(prefijo)));
     const antes = this.instantanea();
-    const despues: Instantanea = { estructura: antes.estructura, capturas: sinHoja(antes.capturas), formatos: sinHoja(antes.formatos) };
+    const despues: Instantanea = { ...antes, capturas: sinHoja(antes.capturas), formatos: sinHoja(antes.formatos) };
     if (this.mismasInstantaneas(antes, despues)) return;
     this.registrarDeshacer(antes);
     this.restaurarInstantanea(despues);
@@ -1025,6 +1325,8 @@ export class BoletosLibroPage implements OnInit {
       estructura: motor ? JSON.stringify(motor.estructura()) : '[]',
       capturas: motor ? motor.capturas() : {},
       formatos: motor ? this.serializarFormatos(motor.formatos()) : {},
+      pestanas: motor ? motor.personalizadas() : [],
+      ordenPestanas: motor ? motor.ordenPestanas() : [],
     };
   }
 
@@ -1032,12 +1334,14 @@ export class BoletosLibroPage implements OnInit {
     const motor = this.motor();
     if (!motor) return;
     motor.aplicarEstructura(this.parsearEstructura(inst.estructura));
+    motor.cargarPersonalizadas(inst.pestanas ?? []);
+    motor.cargarOrden(inst.ordenPestanas ?? []);
     motor.reemplazarCapturas(inst.capturas);
     motor.reemplazarFormatos(this.parsearFormatos(inst.formatos));
   }
 
   private mismasInstantaneas(a: Instantanea, b: Instantanea): boolean {
-    return a.estructura === b.estructura && mismasCapturas(a.capturas, b.capturas) && mismasCapturas(a.formatos, b.formatos);
+    return a.estructura === b.estructura && mismasCapturas(a.capturas, b.capturas) && mismasCapturas(a.formatos, b.formatos) && mismasPestanas(a.pestanas, b.pestanas) && mismoOrden(a.ordenPestanas, b.ordenPestanas);
   }
 
   private serializarFormatos(formatos: Record<string, EstiloLibro>): Record<string, string> {
@@ -1143,7 +1447,11 @@ export class BoletosLibroPage implements OnInit {
           if (mismaEstructura) {
             const capturas = fusionarCapturas(estado.capturas, respaldo.base.capturas, respaldo.actual.capturas);
             const formatos = fusionarCapturas(estado.formatos ?? {}, respaldo.base.formatos, respaldo.actual.formatos);
-            if (!mismasCapturas(capturas, estado.capturas) || !mismasCapturas(formatos, estado.formatos ?? {})) {
+            const pestanas = respaldo.actual.pestanas;
+            const orden = respaldo.actual.ordenPestanas;
+            if (!mismasCapturas(capturas, estado.capturas) || !mismasCapturas(formatos, estado.formatos ?? {}) || !mismasPestanas(pestanas, estado.pestanasPersonalizadas ?? []) || !mismoOrden(orden, estado.ordenPestanas ?? [])) {
+              motor.cargarPersonalizadas(pestanas);
+              motor.cargarOrden(orden);
               motor.reemplazarCapturas(capturas);
               motor.reemplazarFormatos(this.parsearFormatos(formatos));
               this.cambios.update((n) => n + 1);
@@ -1153,6 +1461,8 @@ export class BoletosLibroPage implements OnInit {
             }
           } else {
             motor.aplicarEstructura(this.parsearEstructura(respaldo.actual.estructura));
+            motor.cargarPersonalizadas(respaldo.actual.pestanas);
+            motor.cargarOrden(respaldo.actual.ordenPestanas);
             motor.reemplazarCapturas(respaldo.actual.capturas);
             motor.reemplazarFormatos(this.parsearFormatos(respaldo.actual.formatos));
             this.cambios.update((n) => n + 1);
@@ -1171,11 +1481,15 @@ export class BoletosLibroPage implements OnInit {
         const motor = this.motor();
         if (respaldo && motor) {
           motor.aplicarEstructura(this.parsearEstructura(respaldo.actual.estructura));
+          motor.cargarPersonalizadas(respaldo.actual.pestanas);
+          motor.cargarOrden(respaldo.actual.ordenPestanas);
           motor.reemplazarCapturas(respaldo.actual.capturas);
           motor.reemplazarFormatos(this.parsearFormatos(respaldo.actual.formatos));
           this.base = respaldo.base.capturas;
           this.baseFormatos = respaldo.base.formatos;
           this.baseEstructura = respaldo.base.estructura;
+          this.basePestanas = respaldo.base.pestanas;
+          this.baseOrden = respaldo.base.ordenPestanas;
           this.cambios.update((n) => n + 1);
         }
         this.timerGuardado = setTimeout(() => this.cargarEstado(), 10000);
@@ -1189,9 +1503,13 @@ export class BoletosLibroPage implements OnInit {
     this.base = { ...(estado.capturas ?? {}) };
     this.baseFormatos = { ...(estado.formatos ?? {}) };
     this.baseEstructura = estado.estructura ?? '[]';
+    this.basePestanas = (estado.pestanasPersonalizadas ?? []).map((p) => ({ ...p }));
+    this.baseOrden = [...(estado.ordenPestanas ?? [])];
     this.actualizado.set(estado.actualizado);
     const motor = this.motor();
     motor?.aplicarEstructura(this.parsearEstructura(this.baseEstructura));
+    motor?.cargarPersonalizadas(this.basePestanas);
+    motor?.cargarOrden(this.baseOrden);
     motor?.reemplazarCapturas(this.base);
     motor?.reemplazarFormatos(this.parsearFormatos(this.baseFormatos));
     this.cambios.update((n) => n + 1);
@@ -1215,10 +1533,14 @@ export class BoletosLibroPage implements OnInit {
     const capturas = motor.capturas();
     const formatos = this.serializarFormatos(motor.formatos());
     const estructura = JSON.stringify(motor.estructura());
+    const pestanas = motor.personalizadas();
+    const orden = motor.ordenPestanas();
     if (
       mismasCapturas(capturas, this.base) &&
       mismasCapturas(formatos, this.baseFormatos) &&
       estructura === this.baseEstructura &&
+      mismasPestanas(pestanas, this.basePestanas) &&
+      mismoOrden(orden, this.baseOrden) &&
       this.version !== null
     ) {
       this.estado.set('guardado');
@@ -1227,7 +1549,7 @@ export class BoletosLibroPage implements OnInit {
     }
     this.guardando = true;
     this.estado.set('guardando');
-    this.api.guardar(capturas, formatos, estructura, this.version).subscribe({
+    this.api.guardar(capturas, formatos, estructura, pestanas, orden, this.version).subscribe({
       next: (estado) => {
         this.guardando = false;
         this.conflictos = 0;
@@ -1235,13 +1557,17 @@ export class BoletosLibroPage implements OnInit {
         this.base = { ...(estado.capturas ?? {}) };
         this.baseFormatos = { ...(estado.formatos ?? {}) };
         this.baseEstructura = estado.estructura ?? '[]';
+        this.basePestanas = (estado.pestanasPersonalizadas ?? []).map((p) => ({ ...p }));
+        this.baseOrden = [...(estado.ordenPestanas ?? [])];
         this.actualizado.set(estado.actualizado);
         this.cambios.update((n) => n + 1);
         const pendiente =
           this.repetir ||
           !mismasCapturas(motor.capturas(), this.base) ||
           !mismasCapturas(this.serializarFormatos(motor.formatos()), this.baseFormatos) ||
-          JSON.stringify(motor.estructura()) !== this.baseEstructura;
+          JSON.stringify(motor.estructura()) !== this.baseEstructura ||
+          !mismasPestanas(motor.personalizadas(), this.basePestanas) ||
+          !mismoOrden(motor.ordenPestanas(), this.baseOrden);
         if (pendiente) {
           this.repetir = false;
           this.guardar();
@@ -1256,13 +1582,17 @@ export class BoletosLibroPage implements OnInit {
         if (conflicto && this.conflictos < MAX_CONFLICTOS) {
           this.conflictos++;
           const serverE = conflicto.estructura ?? '[]';
-          if (serverE !== this.baseEstructura || serverE !== JSON.stringify(motor.estructura())) {
+          if (serverE !== this.baseEstructura || serverE !== JSON.stringify(motor.estructura()) || !mismasPestanas(conflicto.pestanasPersonalizadas ?? [], motor.personalizadas()) || !mismoOrden(conflicto.ordenPestanas ?? [], motor.ordenPestanas())) {
             // Divergencia de columnas: se adopta la estructura del servidor para no corromper el libro.
             this.version = conflicto.version;
             this.base = { ...(conflicto.capturas ?? {}) };
             this.baseFormatos = { ...(conflicto.formatos ?? {}) };
             this.baseEstructura = serverE;
+            this.basePestanas = (conflicto.pestanasPersonalizadas ?? []).map((p) => ({ ...p }));
+            this.baseOrden = [...(conflicto.ordenPestanas ?? [])];
             motor.aplicarEstructura(this.parsearEstructura(serverE));
+            motor.cargarPersonalizadas(this.basePestanas);
+            motor.cargarOrden(this.baseOrden);
             motor.reemplazarCapturas(this.base);
             motor.reemplazarFormatos(this.parsearFormatos(this.baseFormatos));
             this.cambios.update((n) => n + 1);
@@ -1295,7 +1625,9 @@ export class BoletosLibroPage implements OnInit {
     const sinCambios =
       mismasCapturas(motor.capturas(), this.base) &&
       mismasCapturas(this.serializarFormatos(motor.formatos()), this.baseFormatos) &&
-      JSON.stringify(motor.estructura()) === this.baseEstructura;
+      JSON.stringify(motor.estructura()) === this.baseEstructura &&
+      mismasPestanas(motor.personalizadas(), this.basePestanas) &&
+      mismoOrden(motor.ordenPestanas(), this.baseOrden);
     if (this.estado() === 'cargando' || !sinCambios) return;
     this.api.estado().subscribe({
       next: (estado) => {
@@ -1303,7 +1635,9 @@ export class BoletosLibroPage implements OnInit {
         const siguenSinCambios =
           mismasCapturas(motor.capturas(), this.base) &&
           mismasCapturas(this.serializarFormatos(motor.formatos()), this.baseFormatos) &&
-          JSON.stringify(motor.estructura()) === this.baseEstructura;
+          JSON.stringify(motor.estructura()) === this.baseEstructura &&
+          mismasPestanas(motor.personalizadas(), this.basePestanas) &&
+          mismoOrden(motor.ordenPestanas(), this.baseOrden);
         if (!siguenSinCambios) return;
         this.pilaDeshacer = [];
         this.pilaRehacer = [];
@@ -1319,8 +1653,8 @@ export class BoletosLibroPage implements OnInit {
     const motor = this.motor();
     if (!motor) return;
     const respaldo: Respaldo = {
-      base: { estructura: this.baseEstructura, capturas: this.base, formatos: this.baseFormatos },
-      actual: { estructura: JSON.stringify(motor.estructura()), capturas: motor.capturas(), formatos: this.serializarFormatos(motor.formatos()) },
+      base: { estructura: this.baseEstructura, capturas: this.base, formatos: this.baseFormatos, pestanas: this.basePestanas, ordenPestanas: this.baseOrden },
+      actual: { estructura: JSON.stringify(motor.estructura()), capturas: motor.capturas(), formatos: this.serializarFormatos(motor.formatos()), pestanas: motor.personalizadas(), ordenPestanas: motor.ordenPestanas() },
     };
     escribirLocal(CLAVE_RESPALDO, JSON.stringify(respaldo));
   }
@@ -1367,6 +1701,8 @@ function construirVista(motor: MotorLibro, hoja: HojaLibro): Vista {
         n,
         alto: altoFila(hoja, n),
         celdas: base.map(({ ref, estilo, formato, alinear }, i) => {
+        const fusion = motor.fusionDe(hoja.name, n, i);
+        const esAnclaFusion = !!fusion && fusion.fila === n && fusion.col === i;
         const css: string[] = [];
         if (estilo.bg) css.push(`background:${estilo.bg}`);
         if (formato.rojo) css.push('color:#FF0000');
@@ -1400,6 +1736,9 @@ function construirVista(motor: MotorLibro, hoja: HojaLibro): Vista {
           css: css.join(';'),
           clase: desborda.has(i) ? 'desborda' : '',
           flujo: desborda.get(i),
+          visible: !fusion || esAnclaFusion,
+          colspan: esAnclaFusion && fusion ? fusion.hastaCol - fusion.col + 1 : undefined,
+          rowspan: esAnclaFusion && fusion ? fusion.hastaFila - fusion.fila + 1 : undefined,
         };
       }),
       };
@@ -1481,6 +1820,10 @@ function leerRespaldo(): Respaldo | null {
     parsed.actual.formatos ??= {};
     parsed.base.estructura ??= '[]';
     parsed.actual.estructura ??= '[]';
+    parsed.base.pestanas ??= [];
+    parsed.actual.pestanas ??= [];
+    parsed.base.ordenPestanas ??= [];
+    parsed.actual.ordenPestanas ??= [];
     return parsed;
   } catch {
     return null;
@@ -1493,4 +1836,16 @@ function borrarRespaldo(): void {
   } catch {
     // Ignorado.
   }
+}
+
+function crearIdPestana(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `pestana-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function mismasPestanas(a: PestanaPersonalizada[], b: PestanaPersonalizada[]): boolean {
+  return a.length === b.length && a.every((p, i) => p.id === b[i]?.id && p.nombre === b[i]?.nombre);
+}
+
+function mismoOrden(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((nombre, i) => nombre === b[i]);
 }

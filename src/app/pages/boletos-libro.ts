@@ -1,4 +1,4 @@
-import { desplazarColumnas, evaluarFormula, indiceColumna, letraColumna, separarRef } from './boletos-formula';
+import { desplazarColumnas, desplazarFilas, evaluarFormula, indiceColumna, letraColumna, separarRef } from './boletos-formula';
 import { leerNumero } from './boletos-grid';
 
 /**
@@ -11,8 +11,16 @@ import { leerNumero } from './boletos-grid';
  */
 
 export type ValorLibro = string | number | boolean | null;
-/** Operación estructural sobre columnas de una hoja. */
-export type OpLibro = { hoja: string; tipo: 'insCol' | 'delCol'; col: number };
+/** Operación estructural persistida del libro. */
+export type OpLibro =
+  | { hoja: string; tipo: 'insCol' | 'delCol'; col: number }
+  | { hoja: string; tipo: 'anchoCol'; col: number; ancho: number }
+  | { hoja: string; tipo: 'insFila' | 'delFila'; fila: number }
+  | { hoja: string; tipo: 'altoFila'; fila: number; alto: number }
+  | { hoja: string; tipo: 'fusionar'; fila: number; col: number; hastaFila: number; hastaCol: number }
+  | { hoja: string; tipo: 'desfusionar'; fila: number; col: number }
+  | { hoja: string; tipo: 'renHoja'; nuevo: string }
+  | { hoja: string; tipo: 'delHoja' };
 /** [valor, fórmula, índice de estilo, valor calculado por Excel] */
 export type CeldaLibro = [ValorLibro, string | null, number, ValorLibro];
 
@@ -58,8 +66,11 @@ export type HojaLibro = {
   hiddenCols: string[];
   hiddenRows: number[];
   freeze: string | null;
+  fusiones?: FusionLibro[];
   cells: Record<string, CeldaLibro>;
 };
+
+export type FusionLibro = { fila: number; col: number; hastaFila: number; hastaCol: number };
 
 export type LibroJson = {
   version: number;
@@ -69,6 +80,11 @@ export type LibroJson = {
   styles: EstiloLibro[];
   sheets: HojaLibro[];
 };
+
+export const COLUMNAS_BASE_LIBRO = 38; // A..AL
+export const FILAS_BASE_LIBRO = 200;
+
+export type PestanaPersonalizada = { id: string; nombre: string };
 
 export type ValorCalculado =
   | { tipo: 'vacio' }
@@ -89,6 +105,8 @@ export class MotorLibro {
   private readonly original: LibroJson;
   /** Operaciones de columna aplicadas, en orden. */
   private ops: OpLibro[] = [];
+  private personales: PestanaPersonalizada[] = [];
+  private orden: string[] = [];
   /** Copia de trabajo (el original con columnas insertadas/eliminadas). */
   libro: LibroJson;
 
@@ -227,8 +245,198 @@ export class MotorLibro {
   private reconstruir(): void {
     this.libro = clonarLibro(this.original);
     this.indexar();
+    const nuevas = this.personales.map((p) => hojaPersonalizada(p.nombre));
+    let ultimaBase = -1;
+    for (let i = 0; i < this.libro.sheets.length; i++) {
+      if (this.libro.sheets[i].name.trim().toUpperCase().startsWith('BASE ')) ultimaBase = i;
+    }
+    this.libro.sheets.splice(ultimaBase + 1, 0, ...nuevas);
+    this.indexar();
     for (const op of this.ops) this.ejecutarOp(op);
+    this.aplicarOrden();
     this.memo.clear();
+  }
+
+  esOriginal(nombre: string): boolean { return this.original.sheets.some((h) => h.name.trim().toUpperCase() === nombre.trim().toUpperCase()); }
+
+  personalizadas(): PestanaPersonalizada[] { return this.personales.map((p) => ({ ...p })); }
+
+  ordenPestanas(): string[] { return this.libro.sheets.map((h) => h.name.trim()); }
+
+  cargarOrden(orden: string[]): void {
+    this.orden = orden.map((nombre) => nombre.trim()).filter(Boolean);
+    this.reconstruir();
+  }
+
+  moverPestana(nombre: string, destino: string): boolean {
+    const origenClave = nombre.trim().toUpperCase();
+    const destinoClave = destino.trim().toUpperCase();
+    const origen = this.libro.sheets.findIndex((h) => h.name.trim().toUpperCase() === origenClave);
+    const indiceDestino = this.libro.sheets.findIndex((h) => h.name.trim().toUpperCase() === destinoClave);
+    if (origen < 0 || indiceDestino < 0 || origen === indiceDestino) return false;
+    const [hoja] = this.libro.sheets.splice(origen, 1);
+    this.libro.sheets.splice(indiceDestino, 0, hoja);
+    this.orden = this.ordenPestanas();
+    this.indexar();
+    return true;
+  }
+
+  /** Cambia el ancho de una columna y conserva el último arrastre como una operación. */
+  cambiarAnchoColumna(hojaNombre: string, col: number, ancho: number): boolean {
+    const hoja = this.hoja(hojaNombre);
+    if (!hoja || col < 0 || col >= hoja.maxCol) return false;
+    const valor = Math.max(36, Math.min(320, Math.round(ancho)));
+    const letra = letraColumna(col);
+    hoja.cols[letra] = valor;
+    this.reemplazarUltimaMedida({ hoja: hoja.name, tipo: 'anchoCol', col, ancho: valor });
+    return true;
+  }
+
+  /** Cambia el alto de una fila y conserva el último arrastre como una operación. */
+  cambiarAltoFila(hojaNombre: string, fila: number, alto: number): boolean {
+    const hoja = this.hoja(hojaNombre);
+    if (!hoja || fila < 1 || fila > hoja.maxRow) return false;
+    const valor = Math.max(18, Math.min(120, Math.round(alto)));
+    hoja.rows[String(fila)] = valor;
+    this.reemplazarUltimaMedida({ hoja: hoja.name, tipo: 'altoFila', fila, alto: valor });
+    return true;
+  }
+
+  fusionarCeldas(hojaNombre: string, fila: number, col: number, hastaFila: number, hastaCol: number): boolean {
+    const hoja = this.hoja(hojaNombre);
+    if (!hoja || fila < 1 || col < 0 || hastaFila < fila || hastaCol < col || hastaFila > hoja.maxRow || hastaCol >= hoja.maxCol) return false;
+    const fusiones = hoja.fusiones ?? (hoja.fusiones = []);
+    if (hastaFila === fila && hastaCol === col) return false;
+    if (fusiones.some((f) => seSolapan(f, { fila, col, hastaFila, hastaCol }))) return false;
+    for (let f = fila; f <= hastaFila; f++) {
+      for (let c = col; c <= hastaCol; c++) {
+        if (f === fila && c === col) continue;
+        if (this.textoEdicion(hoja.name, `${letraColumna(c)}${f}`).trim()) return false;
+      }
+    }
+    const fusion = { hoja: hoja.name, tipo: 'fusionar' as const, fila, col, hastaFila, hastaCol };
+    fusiones.push({ fila, col, hastaFila, hastaCol });
+    this.reemplazarUltimaMedida(fusion);
+    return true;
+  }
+
+  desfusionarCeldas(hojaNombre: string, fila: number, col: number): boolean {
+    const hoja = this.hoja(hojaNombre);
+    const fusion = hoja?.fusiones?.find((f) => f.fila === fila && f.col === col);
+    if (!hoja || !fusion) return false;
+    hoja.fusiones = hoja.fusiones!.filter((f) => f !== fusion);
+    this.reemplazarUltimaMedida({ hoja: hoja.name, tipo: 'desfusionar', fila, col });
+    return true;
+  }
+
+  fusionDe(hojaNombre: string, fila: number, col: number): FusionLibro | null {
+    const hoja = this.hoja(hojaNombre);
+    return hoja?.fusiones?.find((f) => fila >= f.fila && fila <= f.hastaFila && col >= f.col && col <= f.hastaCol) ?? null;
+  }
+
+  puedeDesfusionar(hojaNombre: string, fila: number, col: number): boolean {
+    const fusion = this.fusionDe(hojaNombre, fila, col);
+    return !!fusion && fusion.fila === fila && fusion.col === col;
+  }
+
+  private reemplazarUltimaMedida(op: OpLibro): void {
+    const ultima = this.ops[this.ops.length - 1];
+    const mismaColumna = op.tipo === 'anchoCol' && ultima?.tipo === 'anchoCol' && ultima.col === op.col;
+    const mismaFila = op.tipo === 'altoFila' && ultima?.tipo === 'altoFila' && ultima.fila === op.fila;
+    if (ultima && ultima.hoja === op.hoja && (mismaColumna || mismaFila)) {
+      this.ops[this.ops.length - 1] = op;
+    } else {
+      this.ops.push(op);
+    }
+  }
+
+  agregarPersonalizada(pestana: PestanaPersonalizada): boolean {
+    if (this.hoja(pestana.nombre)) return false;
+    this.personales.push({ ...pestana });
+    this.libro.sheets.push(hojaPersonalizada(pestana.nombre));
+    this.indexar();
+    this.memo.clear();
+    return true;
+  }
+
+  cargarPersonalizadas(pestanas: PestanaPersonalizada[]): void {
+    this.personales = pestanas.map((p) => ({ ...p }));
+    this.reconstruir();
+  }
+
+  renombrarPersonalizada(id: string, nombre: string): boolean {
+    const pestana = this.personales.find((p) => p.id === id);
+    if (!pestana || this.hoja(nombre)) return false;
+    const anterior = pestana.nombre;
+    const hoja = this.hoja(anterior);
+    if (!hoja) return false;
+    for (const otra of this.libro.sheets) {
+      for (const celda of Object.values(otra.cells)) if (celda[1]) celda[1] = renombrarReferenciaHoja(celda[1], anterior, nombre);
+    }
+    this.entradas = renombrarClaves(this.entradas, anterior, nombre);
+    this.entradas = renombrarValoresFormula(this.entradas, anterior, nombre);
+    this.formatosMap = renombrarClaves(this.formatosMap, anterior, nombre);
+    hoja.name = nombre;
+    pestana.nombre = nombre;
+    this.orden = this.orden.map((actual) => actual.trim().toUpperCase() === anterior.trim().toUpperCase() ? nombre : actual);
+    this.indexar();
+    this.memo.clear();
+    return true;
+  }
+
+  renombrarHoja(nombre: string, nuevo: string): boolean {
+    const hoja = this.hoja(nombre);
+    if (!hoja || this.hoja(nuevo)) return false;
+    const anterior = hoja.name;
+    this.orden = this.orden.map((actual) => actual.trim().toUpperCase() === anterior.trim().toUpperCase() ? nuevo : actual);
+    this.ops.push({ hoja: anterior, tipo: 'renHoja', nuevo });
+    this.entradas = renombrarClaves(this.entradas, anterior, nuevo);
+    this.entradas = renombrarValoresFormula(this.entradas, anterior, nuevo);
+    this.formatosMap = renombrarClaves(this.formatosMap, anterior, nuevo);
+    this.reconstruir();
+    this.memo.clear();
+    return true;
+  }
+
+  eliminarPersonalizada(id: string): boolean {
+    const pestana = this.personales.find((p) => p.id === id);
+    if (!pestana || this.referenciasAHoja(pestana.nombre)) return false;
+    this.personales = this.personales.filter((p) => p.id !== id);
+    this.entradas = sinHoja(this.entradas, pestana.nombre);
+    this.formatosMap = sinHoja(this.formatosMap, pestana.nombre);
+    this.reconstruir();
+    return true;
+  }
+
+  eliminarHoja(nombre: string): boolean {
+    const hoja = this.hoja(nombre);
+    if (!hoja || this.referenciasAHoja(hoja.name)) return false;
+    this.ops.push({ hoja: hoja.name, tipo: 'delHoja' });
+    this.entradas = sinHoja(this.entradas, hoja.name);
+    this.formatosMap = sinHoja(this.formatosMap, hoja.name);
+    this.reconstruir();
+    return true;
+  }
+
+  private aplicarOrden(): void {
+    if (!this.orden.length) return;
+    const pendientes = new Map(this.libro.sheets.map((hoja) => [hoja.name.trim().toUpperCase(), hoja]));
+    const ordenadas: HojaLibro[] = [];
+    for (const nombre of this.orden) {
+      const clave = nombre.trim().toUpperCase();
+      const hoja = pendientes.get(clave);
+      if (hoja) {
+        ordenadas.push(hoja);
+        pendientes.delete(clave);
+      }
+    }
+    this.libro.sheets = [...ordenadas, ...pendientes.values()];
+  }
+
+  private referenciasAHoja(nombre: string): boolean {
+    for (const hoja of this.libro.sheets) for (const celda of Object.values(hoja.cells)) if (celda[1] && contieneReferenciaHoja(celda[1], nombre)) return true;
+    for (const valor of Object.values(this.entradas)) if (valor.startsWith('=') && contieneReferenciaHoja(valor, nombre)) return true;
+    return false;
   }
 
   /** Inserta una columna en `col` (0-based). Desplaza celdas, fórmulas, anchos y capturas. */
@@ -261,6 +469,38 @@ export class MotorLibro {
     return { ok: true };
   }
 
+  insertarFila(hojaNombre: string, fila: number): boolean {
+    const hoja = this.hoja(hojaNombre);
+    if (!hoja || fila < 1 || fila > hoja.maxRow + 1) return false;
+    const op: OpLibro = { hoja: hoja.name, tipo: 'insFila', fila };
+    this.ops.push(op);
+    this.reconstruir();
+    this.entradas = desplazarClavesFila(this.entradas, hoja.name, fila, 1);
+    this.formatosMap = desplazarClavesFila(this.formatosMap, hoja.name, fila, 1);
+    this.memo.clear();
+    return true;
+  }
+
+  eliminarFila(hojaNombre: string, fila: number): { ok: boolean; motivo?: string } {
+    const hoja = this.hoja(hojaNombre);
+    if (!hoja || fila < 1 || fila > hoja.maxRow) return { ok: false, motivo: 'Fila no válida.' };
+    const usada = this.filaReferenciada(hoja.name, fila);
+    if (usada) return { ok: false, motivo: `No se puede eliminar la fila ${fila}: la usan fórmulas (p. ej. ${usada}).` };
+    this.ops.push({ hoja: hoja.name, tipo: 'delFila', fila });
+    this.reconstruir();
+    this.entradas = desplazarClavesFila(this.entradas, hoja.name, fila, -1);
+    this.formatosMap = desplazarClavesFila(this.formatosMap, hoja.name, fila, -1);
+    this.memo.clear();
+    return { ok: true };
+  }
+
+  private filaReferenciada(hojaNombre: string, fila: number): string | null {
+    for (const hoja of this.libro.sheets) for (const [ref, celda] of Object.entries(hoja.cells)) {
+      if (celda[1] && desplazarFilas(celda[1], hoja.name, { hoja: hojaNombre, fila, delta: -1 }).refInvalida) return `${hoja.name.trim()}!${ref}`;
+    }
+    return null;
+  }
+
   /** Primera fórmula (de cualquier hoja) que referencia la columna `col` de `hojaNombre`, o null. */
   private columnaReferenciada(hojaNombre: string, col: number): string | null {
     for (const hoja of this.libro.sheets) {
@@ -277,6 +517,54 @@ export class MotorLibro {
   private ejecutarOp(op: OpLibro): void {
     const hoja = this.hoja(op.hoja);
     if (!hoja) return;
+    if (op.tipo === 'renHoja') {
+      for (const otra of this.libro.sheets) {
+        for (const celda of Object.values(otra.cells)) if (celda[1]) celda[1] = renombrarReferenciaHoja(celda[1], hoja.name, op.nuevo);
+      }
+      hoja.name = op.nuevo;
+      this.indexar();
+      return;
+    }
+    if (op.tipo === 'delHoja') {
+      this.libro.sheets = this.libro.sheets.filter((otra) => otra !== hoja);
+      this.indexar();
+      return;
+    }
+    if (op.tipo === 'anchoCol') {
+      hoja.cols[letraColumna(op.col)] = op.ancho;
+      return;
+    }
+    if (op.tipo === 'altoFila') {
+      hoja.rows[String(op.fila)] = op.alto;
+      return;
+    }
+    if (op.tipo === 'fusionar') {
+      (hoja.fusiones ??= []).push({ fila: op.fila, col: op.col, hastaFila: op.hastaFila, hastaCol: op.hastaCol });
+      return;
+    }
+    if (op.tipo === 'desfusionar') {
+      hoja.fusiones = (hoja.fusiones ?? []).filter((f) => f.fila !== op.fila || f.col !== op.col);
+      return;
+    }
+    if (op.tipo === 'insFila' || op.tipo === 'delFila') {
+      const delta = op.tipo === 'insFila' ? 1 : -1;
+      const celdas: Record<string, CeldaLibro> = {};
+      for (const [ref, celda] of Object.entries(hoja.cells)) {
+        const match = /^([A-Z]+)(\d+)$/.exec(ref);
+        if (!match) { celdas[ref] = celda; continue; }
+        const actual = Number(match[2]);
+        const nueva = delta > 0 ? (actual >= op.fila ? actual + 1 : actual) : actual === op.fila ? -1 : actual > op.fila ? actual - 1 : actual;
+        if (nueva >= 1) celdas[`${match[1]}${nueva}`] = celda;
+      }
+      hoja.cells = celdas;
+      hoja.rows = desplazarAlturas(hoja.rows, op.fila, delta);
+      hoja.hiddenRows = desplazarFilasOcultas(hoja.hiddenRows, op.fila, delta);
+      hoja.maxRow = delta > 0 ? hoja.maxRow + 1 : Math.max(1, hoja.maxRow - 1);
+      if (hoja.verFilas != null) hoja.verFilas = delta > 0 ? hoja.verFilas + 1 : Math.max(1, hoja.verFilas - 1);
+      for (const otra of this.libro.sheets) for (const celda of Object.values(otra.cells)) if (celda[1]) celda[1] = desplazarFilas(celda[1], otra.name, { hoja: hoja.name, fila: op.fila, delta }).formula;
+      return;
+    }
+    if (op.tipo !== 'insCol' && op.tipo !== 'delCol') return;
     const delta = op.tipo === 'insCol' ? 1 : -1;
     // 1) Mover las celdas de la hoja.
     const celdas: Record<string, CeldaLibro> = {};
@@ -416,6 +704,38 @@ function desplazarClaves<T>(mapa: Record<string, T>, hojaNombre: string, col: nu
   return salida;
 }
 
+function desplazarClavesFila<T>(mapa: Record<string, T>, hojaNombre: string, fila: number, delta: number): Record<string, T> {
+  const salida: Record<string, T> = {};
+  for (const [clave, valor] of Object.entries(mapa)) {
+    const corte = clave.lastIndexOf('!');
+    const hoja = corte < 0 ? '' : clave.slice(0, corte);
+    const ref = corte < 0 ? clave : clave.slice(corte + 1);
+    const match = /^([A-Z]+)(\d+)$/.exec(ref);
+    if (corte < 0 || hoja.trim().toUpperCase() !== hojaNombre.trim().toUpperCase() || !match) { salida[clave] = valor; continue; }
+    const actual = Number(match[2]);
+    const nueva = delta > 0 ? (actual >= fila ? actual + 1 : actual) : actual === fila ? -1 : actual > fila ? actual - 1 : actual;
+    if (nueva >= 1) salida[`${hoja}!${match[1]}${nueva}`] = valor;
+  }
+  return salida;
+}
+
+function desplazarAlturas(rows: Record<string, number>, fila: number, delta: number): Record<string, number> {
+  const salida: Record<string, number> = {};
+  for (const [clave, alto] of Object.entries(rows)) {
+    const actual = Number(clave);
+    const nueva = delta > 0 ? (actual >= fila ? actual + 1 : actual) : actual === fila ? -1 : actual > fila ? actual - 1 : actual;
+    if (nueva >= 1) salida[String(nueva)] = alto;
+  }
+  return salida;
+}
+
+function desplazarFilasOcultas(filas: number[], fila: number, delta: number): number[] {
+  return filas.flatMap((actual) => {
+    const nueva = delta > 0 ? (actual >= fila ? actual + 1 : actual) : actual === fila ? -1 : actual > fila ? actual - 1 : actual;
+    return nueva >= 1 ? [nueva] : [];
+  });
+}
+
 /** Desplaza los anchos de columna (claves por letra) al mover columnas. */
 function desplazarAnchos(cols: Record<string, number>, col: number, delta: number): Record<string, number> {
   const salida: Record<string, number> = {};
@@ -480,6 +800,65 @@ export function mismasCapturas(a: Record<string, string>, b: Record<string, stri
   const ka = Object.keys(a);
   if (ka.length !== Object.keys(b).length) return false;
   return ka.every((clave) => clave in b && a[clave] === b[clave]);
+}
+
+function hojaPersonalizada(nombre: string): HojaLibro {
+  return { name: nombre, tab: '#70AD47', maxRow: FILAS_BASE_LIBRO, maxCol: COLUMNAS_BASE_LIBRO, verFilas: FILAS_BASE_LIBRO, verCols: COLUMNAS_BASE_LIBRO, cols: {}, rows: {}, hiddenCols: [], hiddenRows: [], freeze: null, fusiones: [], cells: {} };
+}
+
+function seSolapan(a: FusionLibro, b: FusionLibro): boolean {
+  return a.fila <= b.hastaFila && b.fila <= a.hastaFila && a.col <= b.hastaCol && b.col <= a.hastaCol;
+}
+
+function renombrarReferenciaHoja(formula: string, anterior: string, nuevo: string): string {
+  const nombresAnteriores = [...new Set([anterior, anterior.trim()])].filter(Boolean);
+  const nuevoNombre = nuevo.trim();
+  const nuevoExcel = nuevoNombre.replace(/'/g, "''");
+  let resultado = formula;
+  for (const nombre of nombresAnteriores) {
+    const anteriorExcel = nombre.replace(/'/g, "''");
+    resultado = reemplazarSinMayusculas(resultado, `'${anteriorExcel}'!`, `'${nuevoExcel}'!`);
+    resultado = reemplazarSinMayusculas(resultado, `"${nombre}"!`, `'${nuevoExcel}'!`);
+    resultado = reemplazarSinMayusculas(resultado, `${nombre}!`, `${nuevoNombre}!`);
+  }
+  return resultado;
+}
+
+function reemplazarSinMayusculas(texto: string, busca: string, reemplazo: string): string {
+  const fuente = texto.toLocaleLowerCase();
+  const objetivo = busca.toLocaleLowerCase();
+  let salida = '';
+  let inicio = 0;
+  let indice = fuente.indexOf(objetivo, inicio);
+  while (indice >= 0) {
+    salida += texto.slice(inicio, indice) + reemplazo;
+    inicio = indice + busca.length;
+    indice = fuente.indexOf(objetivo, inicio);
+  }
+  return salida + texto.slice(inicio);
+}
+
+function contieneReferenciaHoja(formula: string, nombre: string): boolean {
+  return renombrarReferenciaHoja(formula, nombre, '__REFERENCIA__') !== formula;
+}
+
+function renombrarClaves<T>(mapa: Record<string, T>, anterior: string, nuevo: string): Record<string, T> {
+  const salida: Record<string, T> = {};
+  for (const [clave, valor] of Object.entries(mapa)) {
+    const corte = clave.lastIndexOf('!');
+    const hoja = corte < 0 ? '' : clave.slice(0, corte);
+    salida[hoja.trim().toUpperCase() === anterior.trim().toUpperCase() ? `${nuevo}!${clave.slice(corte + 1)}` : clave] = valor;
+  }
+  return salida;
+}
+
+function sinHoja<T>(mapa: Record<string, T>, nombre: string): Record<string, T> {
+  const prefijo = `${nombre}!`;
+  return Object.fromEntries(Object.entries(mapa).filter(([clave]) => !clave.startsWith(prefijo)));
+}
+
+function renombrarValoresFormula(mapa: Record<string, string>, anterior: string, nuevo: string): Record<string, string> {
+  return Object.fromEntries(Object.entries(mapa).map(([clave, valor]) => [clave, valor.startsWith('=') ? renombrarReferenciaHoja(valor, anterior, nuevo) : valor]));
 }
 
 function desdeValor(valor: ValorLibro): ValorCalculado {
@@ -560,13 +939,13 @@ function general(n: number): string {
 /** Columnas visibles A..maxCol de una hoja. */
 export function columnasDeHoja(hoja: HojaLibro): string[] {
   const ocultas = new Set(hoja.hiddenCols);
-  return Array.from({ length: hoja.verCols ?? hoja.maxCol }, (_, i) => letraColumna(i)).filter((letra) => !ocultas.has(letra));
+  return Array.from({ length: Math.max(COLUMNAS_BASE_LIBRO, hoja.verCols ?? hoja.maxCol) }, (_, i) => letraColumna(i)).filter((letra) => !ocultas.has(letra));
 }
 
 /** Filas visibles 1..maxRow de una hoja. */
 export function filasDeHoja(hoja: HojaLibro): number[] {
   const ocultas = new Set(hoja.hiddenRows);
-  return Array.from({ length: hoja.verFilas ?? hoja.maxRow }, (_, i) => i + 1).filter((fila) => !ocultas.has(fila));
+  return Array.from({ length: Math.max(FILAS_BASE_LIBRO, hoja.verFilas ?? hoja.maxRow) }, (_, i) => i + 1).filter((fila) => !ocultas.has(fila));
 }
 
 /** Ancho de columna en px (el predeterminado de la hoja si no tiene uno propio). */
