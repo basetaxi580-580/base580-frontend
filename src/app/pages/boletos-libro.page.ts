@@ -43,7 +43,7 @@ type CeldaVista = {
 type FilaVista = { n: number; alto: number; celdas: CeldaVista[] };
 type Vista = { cols: { letra: string; ancho: number }[]; filas: FilaVista[]; ancho: number };
 type Seleccion = { fila: number; col: number };
-type MenuCtx = { x: number; y: number; tipo: 'celda' | 'columna' | 'pestana'; col: number; nombre?: string };
+type MenuCtx = { x: number; y: number; tipo: 'celda' | 'columna' | 'fila' | 'pestana'; col: number; fila?: number; nombre?: string };
 type EstadoGuardado = 'cargando' | 'guardado' | 'guardando' | 'pendiente' | 'error' | 'sin-conexion';
 type Instantanea = { estructura: string; capturas: Record<string, string>; formatos: Record<string, string>; pestanas: PestanaPersonalizada[] };
 type Respaldo = { base: Instantanea; actual: Instantanea };
@@ -154,7 +154,7 @@ const ANCHO_NUMEROS = 40;
             <tbody>
               @for (f of v.filas; track f.n; let fi = $index) {
                 <tr [style.height.px]="f.alto">
-                  <th class="fila-h" [class.activa]="fi === sel().fila">{{ f.n }}</th>
+                  <th class="fila-h" [class.activa]="fi === sel().fila" (contextmenu)="menuFila(fi, $event)">{{ f.n }}</th>
                   @for (c of f.celdas; track c.ref; let ci = $index) {
                     <td
                       [class]="c.clase"
@@ -222,11 +222,16 @@ const ANCHO_NUMEROS = 40;
             <div class="menu-sep"></div>
             <button type="button" role="menuitem" (click)="limpiarFormatoActual(); cerrarMenu()"><span class="ic">⌫</span><span>Quitar formato</span></button>
             <button type="button" role="menuitem" (click)="borrarCelda(); cerrarMenu()"><span class="ic">⌦</span><span>Borrar contenido</span></button>
-          } @else {
+          } @else if (m.tipo === 'columna') {
             <button type="button" role="menuitem" (click)="insertarColumna('izq')"><span class="ic">▮</span><span>Insertar columna a la izquierda</span></button>
             <button type="button" role="menuitem" (click)="insertarColumna('der')"><span class="ic">▮</span><span>Insertar columna a la derecha</span></button>
             <div class="menu-sep"></div>
             <button type="button" role="menuitem" (click)="eliminarColumna()"><span class="ic">✕</span><span>Eliminar columna</span></button>
+          } @else {
+            <button type="button" role="menuitem" (click)="insertarFila('arriba')"><span class="ic">＋</span><span>Agregar fila arriba</span></button>
+            <button type="button" role="menuitem" (click)="insertarFila('abajo')"><span class="ic">＋</span><span>Agregar fila abajo</span></button>
+            <div class="menu-sep"></div>
+            <button type="button" role="menuitem" (click)="eliminarFila()"><span class="ic">✕</span><span>Eliminar fila</span></button>
           }
         </div>
       }
@@ -325,6 +330,7 @@ export class BoletosLibroPage implements OnInit {
     return this.motor()?.hojas ?? [];
   });
   protected readonly hoja = computed<HojaLibro | null>(() => {
+    this.cambios();
     const motor = this.motor();
     if (!motor) return null;
     return motor.hoja(this.hojaNombre()) ?? motor.hojaInicial();
@@ -732,6 +738,18 @@ export class BoletosLibroPage implements OnInit {
     this.menu.set({ x, y: event.clientY, tipo: 'columna', col: indiceColumna(letra) });
   }
 
+  protected menuFila(fi: number, event: MouseEvent): void {
+    event.preventDefault();
+    this.confirmarEdicion();
+    this.confirmarBarra();
+    const vista = this.vista();
+    const fila = vista?.filas[fi]?.n;
+    if (!fila) return;
+    this.sel.update((s) => ({ fila: fi, col: s.col }));
+    const x = Math.max(4, Math.min(event.clientX, window.innerWidth - 220));
+    this.menu.set({ x, y: event.clientY, tipo: 'fila', col: -1, fila });
+  }
+
   protected insertarColumna(lado: 'izq' | 'der'): void {
     const motor = this.motor();
     const hoja = this.hoja();
@@ -761,6 +779,37 @@ export class BoletosLibroPage implements OnInit {
     this.registrarDeshacer(antes);
     this.trasCambio();
     this.avisar(`Columna eliminada en ${hoja.name.trim()}.`);
+  }
+
+  protected insertarFila(lado: 'arriba' | 'abajo'): void {
+    const motor = this.motor();
+    const hoja = this.hoja();
+    const menu = this.menu();
+    this.cerrarMenu();
+    if (!motor || !hoja || !menu || menu.fila == null) return;
+    const fila = lado === 'arriba' ? menu.fila : menu.fila + 1;
+    const antes = this.instantanea();
+    if (!motor.insertarFila(hoja.name, fila)) return;
+    this.registrarDeshacer(antes);
+    this.trasCambio();
+    this.avisar(`Fila insertada en ${hoja.name.trim()}.`);
+  }
+
+  protected eliminarFila(): void {
+    const motor = this.motor();
+    const hoja = this.hoja();
+    const menu = this.menu();
+    this.cerrarMenu();
+    if (!motor || !hoja || !menu || menu.fila == null) return;
+    const antes = this.instantanea();
+    const resultado = motor.eliminarFila(hoja.name, menu.fila);
+    if (!resultado.ok) {
+      this.avisar(resultado.motivo ?? 'No se pudo eliminar la fila.');
+      return;
+    }
+    this.registrarDeshacer(antes);
+    this.trasCambio();
+    this.avisar(`Fila eliminada en ${hoja.name.trim()}.`);
   }
 
   protected editarActual(inicial?: string): void {

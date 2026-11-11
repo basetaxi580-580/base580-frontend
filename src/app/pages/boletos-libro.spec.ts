@@ -1,6 +1,6 @@
 import libroJson from './boletos-libro.data.json';
 import { evaluarFormula } from './boletos-formula';
-import { LibroJson, MotorLibro, formatear, fusionarCapturas, redondearExcel } from './boletos-libro';
+import { LibroJson, MotorLibro, columnasDeHoja, formatear, filasDeHoja, fusionarCapturas, redondearExcel } from './boletos-libro';
 
 const libro = libroJson as unknown as LibroJson;
 
@@ -32,6 +32,22 @@ describe('Réplica de PAGO BOLETOS 2026.xlsx', () => {
     expect(motor.agregarPersonalizada({ id: 'a', nombre: 'BASE CLIENTE' })).toBe(true);
     expect(motor.agregarPersonalizada({ id: 'b', nombre: 'BASE CLIENTE' })).toBe(false);
     expect(motor.personalizadas()).toEqual([{ id: 'a', nombre: 'BASE CLIENTE' }]);
+  });
+
+  it('crea libros con A-Z y 1-200 y permite insertar columnas y filas', () => {
+    const motor = new MotorLibro(libro);
+    expect(motor.agregarPersonalizada({ id: 'amplia', nombre: 'CLIENTE AMPLIA' })).toBe(true);
+    const hoja = motor.hoja('CLIENTE AMPLIA');
+    expect(hoja && columnasDeHoja(hoja)).toHaveLength(26);
+    expect(hoja && filasDeHoja(hoja)).toHaveLength(200);
+    expect(motor.insertarColumna('CLIENTE AMPLIA', 0)).toBe(true);
+    expect(motor.hoja('CLIENTE AMPLIA')?.maxCol).toBe(27);
+    expect(motor.insertarFila('CLIENTE AMPLIA', 1)).toBe(true);
+    expect(motor.hoja('CLIENTE AMPLIA')?.maxRow).toBe(201);
+    expect(motor.insertarFila('CLIENTE AMPLIA', 2)).toBe(true);
+    expect(motor.insertarColumna('CLIENTE AMPLIA', 1)).toBe(true);
+    expect(motor.hoja('CLIENTE AMPLIA')?.maxRow).toBe(202);
+    expect(motor.hoja('CLIENTE AMPLIA')?.maxCol).toBe(28);
   });
 
   it('permite renombrar hojas importadas y protege su eliminación si hay referencias', () => {

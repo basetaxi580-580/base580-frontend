@@ -1,4 +1,4 @@
-import { desplazarColumnas, evaluarFormula, indiceColumna, letraColumna, separarRef } from './boletos-formula';
+import { desplazarColumnas, desplazarFilas, evaluarFormula, indiceColumna, letraColumna, separarRef } from './boletos-formula';
 import { leerNumero } from './boletos-grid';
 
 /**
@@ -14,6 +14,7 @@ export type ValorLibro = string | number | boolean | null;
 /** Operación estructural persistida del libro. */
 export type OpLibro =
   | { hoja: string; tipo: 'insCol' | 'delCol'; col: number }
+  | { hoja: string; tipo: 'insFila' | 'delFila'; fila: number }
   | { hoja: string; tipo: 'renHoja'; nuevo: string }
   | { hoja: string; tipo: 'delHoja' };
 /** [valor, fórmula, índice de estilo, valor calculado por Excel] */
@@ -233,7 +234,6 @@ export class MotorLibro {
   private reconstruir(): void {
     this.libro = clonarLibro(this.original);
     this.indexar();
-    for (const op of this.ops) this.ejecutarOp(op);
     const nuevas = this.personales.map((p) => hojaPersonalizada(p.nombre));
     let ultimaBase = -1;
     for (let i = 0; i < this.libro.sheets.length; i++) {
@@ -241,6 +241,7 @@ export class MotorLibro {
     }
     this.libro.sheets.splice(ultimaBase + 1, 0, ...nuevas);
     this.indexar();
+    for (const op of this.ops) this.ejecutarOp(op);
     this.memo.clear();
   }
 
@@ -350,6 +351,38 @@ export class MotorLibro {
     return { ok: true };
   }
 
+  insertarFila(hojaNombre: string, fila: number): boolean {
+    const hoja = this.hoja(hojaNombre);
+    if (!hoja || fila < 1 || fila > hoja.maxRow + 1) return false;
+    const op: OpLibro = { hoja: hoja.name, tipo: 'insFila', fila };
+    this.ops.push(op);
+    this.reconstruir();
+    this.entradas = desplazarClavesFila(this.entradas, hoja.name, fila, 1);
+    this.formatosMap = desplazarClavesFila(this.formatosMap, hoja.name, fila, 1);
+    this.memo.clear();
+    return true;
+  }
+
+  eliminarFila(hojaNombre: string, fila: number): { ok: boolean; motivo?: string } {
+    const hoja = this.hoja(hojaNombre);
+    if (!hoja || fila < 1 || fila > hoja.maxRow) return { ok: false, motivo: 'Fila no válida.' };
+    const usada = this.filaReferenciada(hoja.name, fila);
+    if (usada) return { ok: false, motivo: `No se puede eliminar la fila ${fila}: la usan fórmulas (p. ej. ${usada}).` };
+    this.ops.push({ hoja: hoja.name, tipo: 'delFila', fila });
+    this.reconstruir();
+    this.entradas = desplazarClavesFila(this.entradas, hoja.name, fila, -1);
+    this.formatosMap = desplazarClavesFila(this.formatosMap, hoja.name, fila, -1);
+    this.memo.clear();
+    return { ok: true };
+  }
+
+  private filaReferenciada(hojaNombre: string, fila: number): string | null {
+    for (const hoja of this.libro.sheets) for (const [ref, celda] of Object.entries(hoja.cells)) {
+      if (celda[1] && desplazarFilas(celda[1], hoja.name, { hoja: hojaNombre, fila, delta: -1 }).refInvalida) return `${hoja.name.trim()}!${ref}`;
+    }
+    return null;
+  }
+
   /** Primera fórmula (de cualquier hoja) que referencia la columna `col` de `hojaNombre`, o null. */
   private columnaReferenciada(hojaNombre: string, col: number): string | null {
     for (const hoja of this.libro.sheets) {
@@ -379,6 +412,25 @@ export class MotorLibro {
       this.indexar();
       return;
     }
+    if (op.tipo === 'insFila' || op.tipo === 'delFila') {
+      const delta = op.tipo === 'insFila' ? 1 : -1;
+      const celdas: Record<string, CeldaLibro> = {};
+      for (const [ref, celda] of Object.entries(hoja.cells)) {
+        const match = /^([A-Z]+)(\d+)$/.exec(ref);
+        if (!match) { celdas[ref] = celda; continue; }
+        const actual = Number(match[2]);
+        const nueva = delta > 0 ? (actual >= op.fila ? actual + 1 : actual) : actual === op.fila ? -1 : actual > op.fila ? actual - 1 : actual;
+        if (nueva >= 1) celdas[`${match[1]}${nueva}`] = celda;
+      }
+      hoja.cells = celdas;
+      hoja.rows = desplazarAlturas(hoja.rows, op.fila, delta);
+      hoja.hiddenRows = desplazarFilasOcultas(hoja.hiddenRows, op.fila, delta);
+      hoja.maxRow = delta > 0 ? hoja.maxRow + 1 : Math.max(1, hoja.maxRow - 1);
+      if (hoja.verFilas != null) hoja.verFilas = delta > 0 ? hoja.verFilas + 1 : Math.max(1, hoja.verFilas - 1);
+      for (const otra of this.libro.sheets) for (const celda of Object.values(otra.cells)) if (celda[1]) celda[1] = desplazarFilas(celda[1], otra.name, { hoja: hoja.name, fila: op.fila, delta }).formula;
+      return;
+    }
+    if (op.tipo !== 'insCol' && op.tipo !== 'delCol') return;
     const delta = op.tipo === 'insCol' ? 1 : -1;
     // 1) Mover las celdas de la hoja.
     const celdas: Record<string, CeldaLibro> = {};
@@ -518,6 +570,38 @@ function desplazarClaves<T>(mapa: Record<string, T>, hojaNombre: string, col: nu
   return salida;
 }
 
+function desplazarClavesFila<T>(mapa: Record<string, T>, hojaNombre: string, fila: number, delta: number): Record<string, T> {
+  const salida: Record<string, T> = {};
+  for (const [clave, valor] of Object.entries(mapa)) {
+    const corte = clave.lastIndexOf('!');
+    const hoja = corte < 0 ? '' : clave.slice(0, corte);
+    const ref = corte < 0 ? clave : clave.slice(corte + 1);
+    const match = /^([A-Z]+)(\d+)$/.exec(ref);
+    if (corte < 0 || hoja.trim().toUpperCase() !== hojaNombre.trim().toUpperCase() || !match) { salida[clave] = valor; continue; }
+    const actual = Number(match[2]);
+    const nueva = delta > 0 ? (actual >= fila ? actual + 1 : actual) : actual === fila ? -1 : actual > fila ? actual - 1 : actual;
+    if (nueva >= 1) salida[`${hoja}!${match[1]}${nueva}`] = valor;
+  }
+  return salida;
+}
+
+function desplazarAlturas(rows: Record<string, number>, fila: number, delta: number): Record<string, number> {
+  const salida: Record<string, number> = {};
+  for (const [clave, alto] of Object.entries(rows)) {
+    const actual = Number(clave);
+    const nueva = delta > 0 ? (actual >= fila ? actual + 1 : actual) : actual === fila ? -1 : actual > fila ? actual - 1 : actual;
+    if (nueva >= 1) salida[String(nueva)] = alto;
+  }
+  return salida;
+}
+
+function desplazarFilasOcultas(filas: number[], fila: number, delta: number): number[] {
+  return filas.flatMap((actual) => {
+    const nueva = delta > 0 ? (actual >= fila ? actual + 1 : actual) : actual === fila ? -1 : actual > fila ? actual - 1 : actual;
+    return nueva >= 1 ? [nueva] : [];
+  });
+}
+
 /** Desplaza los anchos de columna (claves por letra) al mover columnas. */
 function desplazarAnchos(cols: Record<string, number>, col: number, delta: number): Record<string, number> {
   const salida: Record<string, number> = {};
@@ -585,7 +669,7 @@ export function mismasCapturas(a: Record<string, string>, b: Record<string, stri
 }
 
 function hojaPersonalizada(nombre: string): HojaLibro {
-  return { name: nombre, tab: '#70AD47', maxRow: 30, maxCol: 8, verFilas: 30, verCols: 8, cols: {}, rows: {}, hiddenCols: [], hiddenRows: [], freeze: null, cells: {} };
+  return { name: nombre, tab: '#70AD47', maxRow: 200, maxCol: 26, verFilas: 200, verCols: 26, cols: {}, rows: {}, hiddenCols: [], hiddenRows: [], freeze: null, cells: {} };
 }
 
 function renombrarReferenciaHoja(formula: string, anterior: string, nuevo: string): string {

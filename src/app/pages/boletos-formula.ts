@@ -372,6 +372,43 @@ function partir(ref: string): { col: number; fila: number } | null {
 
 /** Operación de columna para reescribir referencias: insertar (delta>0) o eliminar (delta<0). */
 export type OpColumna = { hoja: string; col: number; delta: number };
+export type OpFila = { hoja: string; fila: number; delta: number };
+
+/** Reescribe una fórmula al insertar o eliminar una fila en una hoja. */
+export function desplazarFilas(formula: string, hojaFormula: string, op: OpFila): { formula: string; refInvalida: boolean } {
+  const cuerpo = formula.trim().replace(/^=/, '');
+  const tokens = tokenizar(cuerpo);
+  if (!tokens) return { formula, refInvalida: false };
+  let refInvalida = false;
+  const mover = (valor: string, hojaRango: string | null): string => {
+    const { hoja, ref } = separarRef(valor);
+    const destino = hoja ?? hojaRango ?? hojaFormula;
+    const match = /^([A-Z]+)(\d+)$/.exec(ref);
+    if (!match || !mismaHojaNombre(destino, op.hoja)) return valor;
+    const fila = Number(match[2]);
+    const nueva = op.delta > 0 ? (fila >= op.fila ? fila + op.delta : fila) : fila === op.fila ? null : fila > op.fila ? fila + op.delta : fila;
+    if (nueva === null) {
+      refInvalida = true;
+      return valor;
+    }
+    const refNueva = `${match[1]}${nueva}`;
+    return hoja === null ? refNueva : `${hoja}!${refNueva}`;
+  };
+  for (let i = 0; i < tokens.length; i++) {
+    const inicio = tokens[i];
+    if (inicio.t !== 'ref') continue;
+    const esRango = tokens[i + 1]?.t === 'colon' && tokens[i + 2]?.t === 'ref';
+    if (esRango) {
+      const hojaRango = separarRef(inicio.v).hoja;
+      tokens[i] = { t: 'ref', v: mover(inicio.v, null) };
+      tokens[i + 2] = { t: 'ref', v: mover((tokens[i + 2] as { t: 'ref'; v: string }).v, hojaRango) };
+      i += 2;
+    } else {
+      tokens[i] = { t: 'ref', v: mover(inicio.v, null) };
+    }
+  }
+  return { formula: `=${serializarTokens(tokens)}`, refInvalida };
+}
 
 /**
  * Reescribe una fórmula al insertar o eliminar una columna en `op.hoja` desde el
