@@ -11,8 +11,11 @@ import { leerNumero } from './boletos-grid';
  */
 
 export type ValorLibro = string | number | boolean | null;
-/** Operación estructural sobre columnas de una hoja. */
-export type OpLibro = { hoja: string; tipo: 'insCol' | 'delCol'; col: number };
+/** Operación estructural persistida del libro. */
+export type OpLibro =
+  | { hoja: string; tipo: 'insCol' | 'delCol'; col: number }
+  | { hoja: string; tipo: 'renHoja'; nuevo: string }
+  | { hoja: string; tipo: 'delHoja' };
 /** [valor, fórmula, índice de estilo, valor calculado por Excel] */
 export type CeldaLibro = [ValorLibro, string | null, number, ValorLibro];
 
@@ -278,12 +281,35 @@ export class MotorLibro {
     return true;
   }
 
+  renombrarHoja(nombre: string, nuevo: string): boolean {
+    const hoja = this.hoja(nombre);
+    if (!hoja || this.hoja(nuevo)) return false;
+    const anterior = hoja.name;
+    this.ops.push({ hoja: anterior, tipo: 'renHoja', nuevo });
+    this.entradas = renombrarClaves(this.entradas, anterior, nuevo);
+    this.entradas = renombrarValoresFormula(this.entradas, anterior, nuevo);
+    this.formatosMap = renombrarClaves(this.formatosMap, anterior, nuevo);
+    this.reconstruir();
+    this.memo.clear();
+    return true;
+  }
+
   eliminarPersonalizada(id: string): boolean {
     const pestana = this.personales.find((p) => p.id === id);
     if (!pestana || this.referenciasAHoja(pestana.nombre)) return false;
     this.personales = this.personales.filter((p) => p.id !== id);
     this.entradas = sinHoja(this.entradas, pestana.nombre);
     this.formatosMap = sinHoja(this.formatosMap, pestana.nombre);
+    this.reconstruir();
+    return true;
+  }
+
+  eliminarHoja(nombre: string): boolean {
+    const hoja = this.hoja(nombre);
+    if (!hoja || this.referenciasAHoja(hoja.name)) return false;
+    this.ops.push({ hoja: hoja.name, tipo: 'delHoja' });
+    this.entradas = sinHoja(this.entradas, hoja.name);
+    this.formatosMap = sinHoja(this.formatosMap, hoja.name);
     this.reconstruir();
     return true;
   }
@@ -340,6 +366,19 @@ export class MotorLibro {
   private ejecutarOp(op: OpLibro): void {
     const hoja = this.hoja(op.hoja);
     if (!hoja) return;
+    if (op.tipo === 'renHoja') {
+      for (const otra of this.libro.sheets) {
+        for (const celda of Object.values(otra.cells)) if (celda[1]) celda[1] = renombrarReferenciaHoja(celda[1], hoja.name, op.nuevo);
+      }
+      hoja.name = op.nuevo;
+      this.indexar();
+      return;
+    }
+    if (op.tipo === 'delHoja') {
+      this.libro.sheets = this.libro.sheets.filter((otra) => otra !== hoja);
+      this.indexar();
+      return;
+    }
     const delta = op.tipo === 'insCol' ? 1 : -1;
     // 1) Mover las celdas de la hoja.
     const celdas: Record<string, CeldaLibro> = {};
@@ -550,13 +589,27 @@ function hojaPersonalizada(nombre: string): HojaLibro {
 }
 
 function renombrarReferenciaHoja(formula: string, anterior: string, nuevo: string): string {
-  const escapado = anterior.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const anteriorExcel = escapado.replace(/'/g, "''");
-  const nuevoExcel = nuevo.replace(/'/g, "''");
-  return formula
-    .replace(new RegExp(`'${anteriorExcel}'!`, 'gi'), `'${nuevoExcel}'!`)
-    .replace(new RegExp(`"${escapado}"!`, 'gi'), `'${nuevoExcel}'!`)
-    .replace(new RegExp(`${escapado}!`, 'gi'), `${nuevo}!`);
+  const anteriorNombre = anterior.trim();
+  const nuevoNombre = nuevo.trim();
+  const anteriorExcel = anteriorNombre.replace(/'/g, "''");
+  const nuevoExcel = nuevoNombre.replace(/'/g, "''");
+  let resultado = reemplazarSinMayusculas(formula, `'${anteriorExcel}'!`, `'${nuevoExcel}'!`);
+  resultado = reemplazarSinMayusculas(resultado, `"${anteriorNombre}"!`, `'${nuevoExcel}'!`);
+  return reemplazarSinMayusculas(resultado, `${anteriorNombre}!`, `${nuevoNombre}!`);
+}
+
+function reemplazarSinMayusculas(texto: string, busca: string, reemplazo: string): string {
+  const fuente = texto.toLocaleLowerCase();
+  const objetivo = busca.toLocaleLowerCase();
+  let salida = '';
+  let inicio = 0;
+  let indice = fuente.indexOf(objetivo, inicio);
+  while (indice >= 0) {
+    salida += texto.slice(inicio, indice) + reemplazo;
+    inicio = indice + busca.length;
+    indice = fuente.indexOf(objetivo, inicio);
+  }
+  return salida + texto.slice(inicio);
 }
 
 function contieneReferenciaHoja(formula: string, nombre: string): boolean {

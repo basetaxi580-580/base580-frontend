@@ -34,6 +34,18 @@ describe('Réplica de PAGO BOLETOS 2026.xlsx', () => {
     expect(motor.personalizadas()).toEqual([{ id: 'a', nombre: 'BASE CLIENTE' }]);
   });
 
+  it('permite renombrar y eliminar hojas importadas, conservando las referencias', () => {
+    const motor = new MotorLibro(libro);
+    motor.establecer('MANUALES', 'ZZ999', "='BASE NTE 25'!A1");
+    expect(motor.capturas()).toEqual({ 'MANUALES!ZZ999': "='BASE NTE 25'!A1" });
+    expect(motor.renombrarHoja('BASE NTE 25', 'CLIENTE A')).toBe(true);
+    expect(motor.capturas()).toEqual({ 'MANUALES!ZZ999': "='CLIENTE A'!A1" });
+    expect(motor.textoEdicion('MANUALES', 'ZZ999')).toBe("='CLIENTE A'!A1");
+    motor.establecer('MANUALES', 'ZZ999', '');
+    expect(motor.eliminarHoja('CLIENTE A')).toBe(true);
+    expect(motor.hoja('CLIENTE A')).toBeUndefined();
+  });
+
   it('trae las 19 hojas en el orden del Excel', () => {
     expect(libro.sheets.map((hoja) => hoja.name.trim())).toEqual([
       'BASE NTE 25',

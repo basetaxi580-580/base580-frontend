@@ -209,10 +209,8 @@ const ANCHO_NUMEROS = 40;
         <div class="menu" role="menu" [style.left.px]="m.x" [style.top.px]="m.y" (mousedown)="$event.stopPropagation()">
           @if (m.tipo === 'pestana') {
             <button type="button" role="menuitem" (click)="agregarPestana(); cerrarMenu()"><span class="ic">＋</span><span>Añadir libro</span></button>
-            @if (pestanaPersonalizada(m.nombre)) {
-              <button type="button" role="menuitem" (click)="renombrarPestana(); cerrarMenu()"><span class="ic">✎</span><span>Cambiar nombre</span></button>
-              <button type="button" role="menuitem" (click)="eliminarPestana(); cerrarMenu()"><span class="ic">✕</span><span>Eliminar</span></button>
-            }
+            <button type="button" role="menuitem" (click)="renombrarPestana(); cerrarMenu()"><span class="ic">✎</span><span>Cambiar nombre</span></button>
+            <button type="button" role="menuitem" (click)="eliminarPestana(); cerrarMenu()"><span class="ic">✕</span><span>Eliminar</span></button>
           } @else if (m.tipo === 'celda') {
             <button type="button" role="menuitem" (click)="alternar('b'); cerrarMenu()"><b>N</b><span>Negrita</span></button>
             <button type="button" role="menuitem" (click)="alternar('i'); cerrarMenu()"><i>K</i><span>Cursiva</span></button>
@@ -518,18 +516,15 @@ export class BoletosLibroPage implements OnInit {
   protected menuPestana(nombre: string | null, event: MouseEvent): void {
     event.preventDefault();
     event.stopPropagation();
-    this.menu.set({ x: event.clientX, y: event.clientY, tipo: 'pestana', col: -1, nombre: nombre ?? undefined });
-  }
-
-  protected pestanaPersonalizada(nombre: string | undefined): boolean {
-    return !!nombre && !!this.motor()?.personalizadas().find((p) => p.nombre === nombre);
+    const x = Math.max(4, Math.min(event.clientX, window.innerWidth - 220));
+    this.menu.set({ x, y: 12, tipo: 'pestana', col: -1, nombre: nombre ?? undefined });
   }
 
   protected agregarPestana(): void {
     const valor = window.prompt('Nombre de la nueva base:');
     const texto = valor?.trim() ?? '';
     if (!texto || texto.includes('!') || texto.length > 64) { if (valor !== null) this.avisar('El nombre debe tener entre 1 y 64 caracteres y no contener !.'); return; }
-    const nombre = texto.toUpperCase().startsWith('BASE ') ? texto : `BASE ${texto}`;
+    const nombre = texto;
     const motor = this.motor();
     if (!motor || motor.hoja(nombre)) { this.avisar('Ya existe una pestaña con ese nombre.'); return; }
     const pestana = { id: crearIdPestana(), nombre };
@@ -542,12 +537,13 @@ export class BoletosLibroPage implements OnInit {
     const nombre = this.menu()?.nombre;
     const motor = this.motor();
     const pestana = motor?.personalizadas().find((p) => p.nombre === nombre);
-    if (!motor || !pestana) return;
-    const valor = window.prompt('Nuevo nombre de la base:', pestana.nombre);
+    if (!motor || !nombre) return;
+    const valor = window.prompt('Nuevo nombre de la base:', nombre);
     const texto = valor?.trim() ?? '';
     if (!texto || texto.includes('!') || texto.length > 64) { if (valor !== null) this.avisar('El nombre debe tener entre 1 y 64 caracteres y no contener !.'); return; }
-    const nuevo = texto.toUpperCase().startsWith('BASE ') ? texto : `BASE ${texto}`;
-    if (motor.hoja(nuevo) || !motor.renombrarPersonalizada(pestana.id, nuevo)) { this.avisar('Ya existe una pestaña con ese nombre.'); return; }
+    const nuevo = texto;
+    const ok = pestana ? motor.renombrarPersonalizada(pestana.id, nuevo) : motor.renombrarHoja(nombre, nuevo);
+    if (!ok) { this.avisar('Ya existe una pestaña con ese nombre.'); return; }
     if (this.hojaNombre() === nombre) this.hojaNombre.set(nuevo);
     this.trasCambio();
   }
@@ -556,9 +552,10 @@ export class BoletosLibroPage implements OnInit {
     const nombre = this.menu()?.nombre;
     const motor = this.motor();
     const pestana = motor?.personalizadas().find((p) => p.nombre === nombre);
-    if (!motor || !pestana) return;
-    if (!window.confirm(`¿Eliminar ${pestana.nombre}?`)) return;
-    if (!motor.eliminarPersonalizada(pestana.id)) { this.avisar('No se puede eliminar: una fórmula todavía referencia esta pestaña.'); return; }
+    if (!motor || !nombre) return;
+    if (!window.confirm(`¿Eliminar ${nombre}?`)) return;
+    const ok = pestana ? motor.eliminarPersonalizada(pestana.id) : motor.eliminarHoja(nombre);
+    if (!ok) { this.avisar('No se puede eliminar: una fórmula todavía referencia esta pestaña.'); return; }
     if (this.hojaNombre() === nombre) this.hojaNombre.set(motor.hojaInicial().name);
     this.trasCambio();
   }
