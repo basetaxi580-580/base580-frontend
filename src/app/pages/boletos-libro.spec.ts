@@ -245,4 +245,14 @@ describe('Réplica de PAGO BOLETOS 2026.xlsx', () => {
     expect(anchoColumna(recargado.hoja('NORTE 26')!, 'J')).toBe(180);
     expect(altoFila(recargado.hoja('NORTE 26')!, 3)).toBe(48);
   });
+
+  it('combina celdas vacías, rechaza solapamientos y permite quitar la combinación', () => {
+    const motor = new MotorLibro(libro);
+    expect(motor.agregarPersonalizada({ id: 'fusion', nombre: 'FUSION' })).toBe(true);
+    expect(motor.fusionarCeldas('FUSION', 1, 0, 2, 1)).toBe(true);
+    expect(motor.fusionDe('FUSION', 1, 0)).toEqual({ fila: 1, col: 0, hastaFila: 2, hastaCol: 1 });
+    expect(motor.fusionarCeldas('FUSION', 2, 1, 3, 2)).toBe(false);
+    expect(motor.desfusionarCeldas('FUSION', 1, 0)).toBe(true);
+    expect(motor.puedeDesfusionar('FUSION', 1, 0)).toBe(false);
+  });
 });

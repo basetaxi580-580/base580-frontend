@@ -17,6 +17,8 @@ export type OpLibro =
   | { hoja: string; tipo: 'anchoCol'; col: number; ancho: number }
   | { hoja: string; tipo: 'insFila' | 'delFila'; fila: number }
   | { hoja: string; tipo: 'altoFila'; fila: number; alto: number }
+  | { hoja: string; tipo: 'fusionar'; fila: number; col: number; hastaFila: number; hastaCol: number }
+  | { hoja: string; tipo: 'desfusionar'; fila: number; col: number }
   | { hoja: string; tipo: 'renHoja'; nuevo: string }
   | { hoja: string; tipo: 'delHoja' };
 /** [valor, fórmula, índice de estilo, valor calculado por Excel] */
@@ -64,8 +66,11 @@ export type HojaLibro = {
   hiddenCols: string[];
   hiddenRows: number[];
   freeze: string | null;
+  fusiones?: FusionLibro[];
   cells: Record<string, CeldaLibro>;
 };
+
+export type FusionLibro = { fila: number; col: number; hastaFila: number; hastaCol: number };
 
 export type LibroJson = {
   version: number;
@@ -297,6 +302,43 @@ export class MotorLibro {
     return true;
   }
 
+  fusionarCeldas(hojaNombre: string, fila: number, col: number, hastaFila: number, hastaCol: number): boolean {
+    const hoja = this.hoja(hojaNombre);
+    if (!hoja || fila < 1 || col < 0 || hastaFila < fila || hastaCol < col || hastaFila > hoja.maxRow || hastaCol >= hoja.maxCol) return false;
+    const fusiones = hoja.fusiones ?? (hoja.fusiones = []);
+    if (hastaFila === fila && hastaCol === col) return false;
+    if (fusiones.some((f) => seSolapan(f, { fila, col, hastaFila, hastaCol }))) return false;
+    for (let f = fila; f <= hastaFila; f++) {
+      for (let c = col; c <= hastaCol; c++) {
+        if (f === fila && c === col) continue;
+        if (this.textoEdicion(hoja.name, `${letraColumna(c)}${f}`).trim()) return false;
+      }
+    }
+    const fusion = { hoja: hoja.name, tipo: 'fusionar' as const, fila, col, hastaFila, hastaCol };
+    fusiones.push({ fila, col, hastaFila, hastaCol });
+    this.reemplazarUltimaMedida(fusion);
+    return true;
+  }
+
+  desfusionarCeldas(hojaNombre: string, fila: number, col: number): boolean {
+    const hoja = this.hoja(hojaNombre);
+    const fusion = hoja?.fusiones?.find((f) => f.fila === fila && f.col === col);
+    if (!hoja || !fusion) return false;
+    hoja.fusiones = hoja.fusiones!.filter((f) => f !== fusion);
+    this.reemplazarUltimaMedida({ hoja: hoja.name, tipo: 'desfusionar', fila, col });
+    return true;
+  }
+
+  fusionDe(hojaNombre: string, fila: number, col: number): FusionLibro | null {
+    const hoja = this.hoja(hojaNombre);
+    return hoja?.fusiones?.find((f) => fila >= f.fila && fila <= f.hastaFila && col >= f.col && col <= f.hastaCol) ?? null;
+  }
+
+  puedeDesfusionar(hojaNombre: string, fila: number, col: number): boolean {
+    const fusion = this.fusionDe(hojaNombre, fila, col);
+    return !!fusion && fusion.fila === fila && fusion.col === col;
+  }
+
   private reemplazarUltimaMedida(op: OpLibro): void {
     const ultima = this.ops[this.ops.length - 1];
     const mismaColumna = op.tipo === 'anchoCol' && ultima?.tipo === 'anchoCol' && ultima.col === op.col;
@@ -494,6 +536,14 @@ export class MotorLibro {
     }
     if (op.tipo === 'altoFila') {
       hoja.rows[String(op.fila)] = op.alto;
+      return;
+    }
+    if (op.tipo === 'fusionar') {
+      (hoja.fusiones ??= []).push({ fila: op.fila, col: op.col, hastaFila: op.hastaFila, hastaCol: op.hastaCol });
+      return;
+    }
+    if (op.tipo === 'desfusionar') {
+      hoja.fusiones = (hoja.fusiones ?? []).filter((f) => f.fila !== op.fila || f.col !== op.col);
       return;
     }
     if (op.tipo === 'insFila' || op.tipo === 'delFila') {
@@ -753,7 +803,11 @@ export function mismasCapturas(a: Record<string, string>, b: Record<string, stri
 }
 
 function hojaPersonalizada(nombre: string): HojaLibro {
-  return { name: nombre, tab: '#70AD47', maxRow: FILAS_BASE_LIBRO, maxCol: COLUMNAS_BASE_LIBRO, verFilas: FILAS_BASE_LIBRO, verCols: COLUMNAS_BASE_LIBRO, cols: {}, rows: {}, hiddenCols: [], hiddenRows: [], freeze: null, cells: {} };
+  return { name: nombre, tab: '#70AD47', maxRow: FILAS_BASE_LIBRO, maxCol: COLUMNAS_BASE_LIBRO, verFilas: FILAS_BASE_LIBRO, verCols: COLUMNAS_BASE_LIBRO, cols: {}, rows: {}, hiddenCols: [], hiddenRows: [], freeze: null, fusiones: [], cells: {} };
+}
+
+function seSolapan(a: FusionLibro, b: FusionLibro): boolean {
+  return a.fila <= b.hastaFila && b.fila <= a.hastaFila && a.col <= b.hastaCol && b.col <= a.hastaCol;
 }
 
 function renombrarReferenciaHoja(formula: string, anterior: string, nuevo: string): string {

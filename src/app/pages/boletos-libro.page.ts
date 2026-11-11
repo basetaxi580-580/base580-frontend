@@ -39,10 +39,14 @@ type CeldaVista = {
   clase: string;
   /** Si el texto se desborda: hacia dónde se alinea (justify-content). */
   flujo?: string;
+  visible: boolean;
+  colspan?: number;
+  rowspan?: number;
 };
 type FilaVista = { n: number; alto: number; celdas: CeldaVista[] };
 type Vista = { cols: { letra: string; ancho: number }[]; filas: FilaVista[]; ancho: number };
 type Seleccion = { fila: number; col: number };
+type Rango = { inicio: Seleccion; fin: Seleccion };
 type Redimension = { tipo: 'col' | 'fila'; indice: number; inicio: number; medida: number; antes: Instantanea };
 type MenuCtx = { x: number; y: number; tipo: 'celda' | 'columna' | 'fila' | 'pestana'; col: number; fila?: number; nombre?: string };
 type EstadoGuardado = 'cargando' | 'guardado' | 'guardando' | 'pendiente' | 'error' | 'sin-conexion';
@@ -156,9 +160,11 @@ const ANCHO_NUMEROS = 40;
                 <tr [style.height.px]="f.alto">
                   <th class="fila-h" [class.activa]="fi === sel().fila" (contextmenu)="menuFila(fi, $event)">{{ f.n }}<span class="resize-row" (mousedown)="iniciarRedimensionFila(fi, $event)" aria-hidden="true"></span></th>
                   @for (c of f.celdas; track c.ref; let ci = $index) {
-                    <td
+                    @if (c.visible) {<td
                       [class]="c.clase"
-                      [class.sel]="fi === sel().fila && ci === sel().col"
+                      [class.sel]="esSeleccionada(fi, ci)"
+                      [attr.colspan]="c.colspan ?? null"
+                      [attr.rowspan]="c.rowspan ?? null"
                       [style]="c.css"
                       (mousedown)="seleccionar(fi, ci, $event)"
                       (dblclick)="editarActual()"
@@ -181,7 +187,7 @@ const ANCHO_NUMEROS = 40;
                       } @else {
                         <span class="txt">{{ c.texto }}</span>
                       }
-                    </td>
+                    </td>}
                   }
                 </tr>
               }
@@ -215,6 +221,14 @@ const ANCHO_NUMEROS = 40;
             <button type="button" role="menuitem" (click)="alternar('b'); cerrarMenu()"><b>N</b><span>Negrita</span></button>
             <button type="button" role="menuitem" (click)="alternar('i'); cerrarMenu()"><i>K</i><span>Cursiva</span></button>
             <button type="button" role="menuitem" (click)="alternar('u'); cerrarMenu()"><u>S</u><span>Subrayado</span></button>
+            <div class="menu-sep"></div>
+            <div class="menu-grupo">
+              <button type="button" role="menuitem" class="submenu-trigger"><span class="ic">▦</span><span>Opciones de formato</span></button>
+              <div class="submenu" role="menu">
+                <button type="button" role="menuitem" [disabled]="!puedeCombinar()" (click)="combinarCeldas(); cerrarMenu()"><span class="ic">⊞</span><span>Combinar celdas</span></button>
+                <button type="button" role="menuitem" [disabled]="!puedeDescombinar()" (click)="descombinarCeldas(); cerrarMenu()"><span class="ic">⊟</span><span>Quitar combinación</span></button>
+              </div>
+            </div>
             <div class="menu-sep"></div>
             <button type="button" role="menuitem" (click)="alinear('left'); cerrarMenu()"><span class="ic">⟸</span><span>Alinear a la izquierda</span></button>
             <button type="button" role="menuitem" (click)="alinear('center'); cerrarMenu()"><span class="ic">≡</span><span>Centrar</span></button>
@@ -299,7 +313,12 @@ const ANCHO_NUMEROS = 40;
     .menu { position: fixed; z-index: 61; min-width: 220px; padding: 6px; background: #fff; border: 1px solid rgba(236, 72, 153, 0.2); border-radius: 14px; box-shadow: 0 12px 30px rgba(88, 28, 135, 0.16); display: flex; flex-direction: column; }
     .menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 11px; border: 0; background: transparent; border-radius: 10px; cursor: pointer; font: 600 0.85rem "Trebuchet MS", "Arial Rounded MT Bold", Calibri, Carlito, Arial, sans-serif; color: #3a214e; text-align: left; }
     .menu button:hover { background: rgba(244, 114, 182, 0.16); color: #7c3aed; }
+    .menu button:disabled { opacity: .45; cursor: not-allowed; }
     .menu button .ic, .menu button b, .menu button i, .menu button u { display: inline-block; width: 18px; text-align: center; color: #7c3aed; font-style: normal; text-decoration: none; }
+    .menu-grupo { position: relative; }
+    .submenu-trigger::after { content: '›'; margin-left: auto; color: #a855f7; font-size: 1.1rem; }
+    .submenu { position: absolute; left: calc(100% + 5px); top: -6px; display: none; min-width: 210px; padding: 6px; background: #fff; border: 1px solid rgba(236, 72, 153, 0.2); border-radius: 14px; box-shadow: 0 12px 30px rgba(88, 28, 135, 0.16); }
+    .menu-grupo:hover > .submenu, .menu-grupo:focus-within > .submenu { display: flex; flex-direction: column; }
     .menu-sep { height: 1px; background: rgba(168, 85, 247, 0.16); margin: 5px 2px; }
     .error { color: #991b1b; }
     .cargando { color: #7c3aed; }
@@ -324,6 +343,7 @@ export class BoletosLibroPage implements OnInit {
   /** Se incrementa en cada cambio de capturas para recalcular la vista. */
   protected readonly cambios = signal(0);
   protected readonly sel = signal<Seleccion>({ fila: 0, col: 0 });
+  protected readonly rangoSeleccion = signal<Rango | null>(null);
   /** Texto del editor en celda; null cuando no se edita. */
   protected readonly editando = signal<string | null>(null);
   /** Menú contextual abierto (click derecho); null cuando está cerrado. */
@@ -741,6 +761,77 @@ export class BoletosLibroPage implements OnInit {
     this.confirmarEdicion();
     this.confirmarBarra();
     this.sel.set({ fila, col });
+    if (event.shiftKey) {
+      const inicio = this.rangoSeleccion()?.inicio ?? this.sel();
+      this.rangoSeleccion.set({ inicio, fin: { fila, col } });
+    } else {
+      this.rangoSeleccion.set({ inicio: { fila, col }, fin: { fila, col } });
+    }
+  }
+
+  protected esSeleccionada(fila: number, col: number): boolean {
+    const rango = this.rangoSeleccion();
+    if (!rango) return fila === this.sel().fila && col === this.sel().col;
+    const minFila = Math.min(rango.inicio.fila, rango.fin.fila);
+    const maxFila = Math.max(rango.inicio.fila, rango.fin.fila);
+    const minCol = Math.min(rango.inicio.col, rango.fin.col);
+    const maxCol = Math.max(rango.inicio.col, rango.fin.col);
+    return fila >= minFila && fila <= maxFila && col >= minCol && col <= maxCol;
+  }
+
+  protected puedeCombinar(): boolean {
+    const rango = this.rangoActivo();
+    const motor = this.motor();
+    const hoja = this.hoja();
+    return !!rango && !!motor && !!hoja && (rango.hastaFila > rango.fila || rango.hastaCol > rango.col) && !motor.fusionDe(hoja.name, rango.fila, rango.col);
+  }
+
+  protected puedeDescombinar(): boolean {
+    const rango = this.rangoActivo();
+    const motor = this.motor();
+    const hoja = this.hoja();
+    return !!rango && !!motor && !!hoja && motor.puedeDesfusionar(hoja.name, rango.fila, rango.col);
+  }
+
+  protected combinarCeldas(): void {
+    const motor = this.motor();
+    const hoja = this.hoja();
+    const rango = this.rangoActivo();
+    if (!motor || !hoja || !rango || !this.puedeCombinar()) return;
+    const antes = this.instantanea();
+    if (!motor.fusionarCeldas(hoja.name, rango.fila, rango.col, rango.hastaFila, rango.hastaCol)) {
+      this.avisar('Solo se pueden combinar celdas vacías y sin otra combinación encima.');
+      return;
+    }
+    this.registrarDeshacer(antes);
+    this.trasCambio();
+    this.avisar('Celdas combinadas.');
+  }
+
+  protected descombinarCeldas(): void {
+    const motor = this.motor();
+    const hoja = this.hoja();
+    const rango = this.rangoActivo();
+    if (!motor || !hoja || !rango || !this.puedeDescombinar()) return;
+    const antes = this.instantanea();
+    if (!motor.desfusionarCeldas(hoja.name, rango.fila, rango.col)) return;
+    this.registrarDeshacer(antes);
+    this.trasCambio();
+    this.avisar('Combinación retirada.');
+  }
+
+  private rangoActivo(): { fila: number; col: number; hastaFila: number; hastaCol: number } | null {
+    const rango = this.rangoSeleccion();
+    const vista = this.vista();
+    if (!rango || !vista) return null;
+    const inicioFila = Math.min(rango.inicio.fila, rango.fin.fila);
+    const finFila = Math.max(rango.inicio.fila, rango.fin.fila);
+    const inicioCol = Math.min(rango.inicio.col, rango.fin.col);
+    const finCol = Math.max(rango.inicio.col, rango.fin.col);
+    const fila = vista.filas[inicioFila]?.n;
+    const hastaFila = vista.filas[finFila]?.n;
+    if (fila == null || hastaFila == null) return null;
+    return { fila, col: inicioCol, hastaFila, hastaCol: finCol };
   }
 
   /** Inserta la referencia de la celda clicada dentro de la fórmula en edición (como Excel). */
@@ -811,7 +902,10 @@ export class BoletosLibroPage implements OnInit {
     event.preventDefault();
     this.confirmarEdicion();
     this.confirmarBarra();
-    this.sel.set({ fila, col });
+    if (!this.esSeleccionada(fila, col)) {
+      this.sel.set({ fila, col });
+      this.rangoSeleccion.set({ inicio: { fila, col }, fin: { fila, col } });
+    }
     const x = Math.max(4, Math.min(event.clientX, window.innerWidth - 212));
     this.menu.set({ x, y: event.clientY, tipo: 'celda', col });
   }
@@ -1607,6 +1701,8 @@ function construirVista(motor: MotorLibro, hoja: HojaLibro): Vista {
         n,
         alto: altoFila(hoja, n),
         celdas: base.map(({ ref, estilo, formato, alinear }, i) => {
+        const fusion = motor.fusionDe(hoja.name, n, i);
+        const esAnclaFusion = !!fusion && fusion.fila === n && fusion.col === i;
         const css: string[] = [];
         if (estilo.bg) css.push(`background:${estilo.bg}`);
         if (formato.rojo) css.push('color:#FF0000');
@@ -1640,6 +1736,9 @@ function construirVista(motor: MotorLibro, hoja: HojaLibro): Vista {
           css: css.join(';'),
           clase: desborda.has(i) ? 'desborda' : '',
           flujo: desborda.get(i),
+          visible: !fusion || esAnclaFusion,
+          colspan: esAnclaFusion && fusion ? fusion.hastaCol - fusion.col + 1 : undefined,
+          rowspan: esAnclaFusion && fusion ? fusion.hastaFila - fusion.fila + 1 : undefined,
         };
       }),
       };
