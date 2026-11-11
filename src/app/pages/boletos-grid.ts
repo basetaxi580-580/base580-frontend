@@ -7,6 +7,19 @@ export type CampoFijo = 'zona' | 'precio' | 'descuento' | 'sitio' | 'plata' | 'n
 export type CampoHoja = CampoFijo | string;
 
 export type Posicion = { bloque: number; fila: number; col: number };
+export type SecuenciaEnter = { col: number; filas: number[] };
+
+/** Avanza por las celdas editables de los bloques de captura, como Excel. */
+export function moverEnSecuenciaEnter(bloques: SecuenciaEnter[], fila: number, col: number, direccion: 1 | -1): { fila: number; col: number } | null {
+  const indice = bloques.findIndex((bloque) => bloque.col === col);
+  if (indice < 0) return null;
+  const actual = bloques[indice].filas;
+  const siguientes = direccion > 0 ? actual.filter((n) => n > fila) : actual.filter((n) => n < fila).reverse();
+  if (siguientes.length) return { fila: siguientes[0], col };
+  const vecino = bloques[indice + direccion];
+  if (!vecino?.filas.length) return { fila, col };
+  return { fila: direccion > 0 ? vecino.filas[0] : vecino.filas[vecino.filas.length - 1], col: vecino.col };
+}
 
 export function columnasDeBloque(plata: boolean, catalogo = false): CampoHoja[] {
   const columnas: CampoHoja[] = ['zona', 'precio', 'descuento', 'sitio'];

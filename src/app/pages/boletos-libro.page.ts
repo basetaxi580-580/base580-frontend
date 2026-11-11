@@ -14,7 +14,7 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { BoletosLibroApiService, ConflictoLibro, EstadoLibro, PestanaPersonalizada } from '../data/boletos-libro-api.service';
-import { parseTsv } from './boletos-grid';
+import { moverEnSecuenciaEnter, parseTsv, SecuenciaEnter } from './boletos-grid';
 import {
   EstiloLibro,
   HojaLibro,
@@ -215,6 +215,7 @@ const ANCHO_NUMEROS = 40;
         <div class="menu" role="menu" [style.left.px]="m.x" [style.top.px]="m.y" (mousedown)="$event.stopPropagation()">
           @if (m.tipo === 'pestana') {
             <button type="button" role="menuitem" (click)="agregarPestana(); cerrarMenu()"><span class="ic">＋</span><span>Añadir libro</span></button>
+            <button type="button" role="menuitem" (click)="copiarPestana(); cerrarMenu()"><span class="ic">⧉</span><span>Duplicar libro</span></button>
             <button type="button" role="menuitem" (click)="renombrarPestana(); cerrarMenu()"><span class="ic">✎</span><span>Cambiar nombre</span></button>
             <button type="button" role="menuitem" (click)="eliminarPestana(); cerrarMenu()"><span class="ic">✕</span><span>Eliminar</span></button>
           } @else if (m.tipo === 'celda') {
@@ -659,6 +660,21 @@ export class BoletosLibroPage implements OnInit {
     this.irAHoja(nombre);
   }
 
+  protected copiarPestana(): void {
+    const origen = this.menu()?.nombre;
+    const motor = this.motor();
+    if (!origen || !motor) { this.avisar('Selecciona una pestaña para copiarla.'); return; }
+    const valor = window.prompt('Nombre de la copia:', `${origen.trim()} copia`);
+    const nombre = valor?.trim() ?? '';
+    if (!nombre || nombre.includes('!') || nombre.length > 64) { if (valor !== null) this.avisar('El nombre debe tener entre 1 y 64 caracteres y no contener !.'); return; }
+    if (motor.hoja(nombre)) { this.avisar('Ya existe una pestaña con ese nombre.'); return; }
+    const antes = this.instantanea();
+    if (!motor.copiarHoja(origen, { id: crearIdPestana(), nombre })) { this.avisar('No se pudo copiar el libro.'); return; }
+    this.registrarDeshacer(antes);
+    this.trasCambio();
+    this.irAHoja(nombre);
+  }
+
   protected renombrarPestana(): void {
     const nombre = this.menu()?.nombre;
     const motor = this.motor();
@@ -1030,7 +1046,7 @@ export class BoletosLibroPage implements OnInit {
     };
     switch (event.key) {
       case 'Enter':
-        return mover(event.shiftKey ? -1 : 1, 0);
+        return this.moverEnter(event.shiftKey ? -1 : 1);
       case 'Tab':
         return mover(0, event.shiftKey ? -1 : 1);
       case 'Escape':
@@ -1163,7 +1179,7 @@ export class BoletosLibroPage implements OnInit {
         return this.mover(0, 1);
       case 'Enter':
         event.preventDefault();
-        return this.mover(event.shiftKey ? -1 : 1, 0);
+        return this.moverEnter(event.shiftKey ? -1 : 1);
       case 'Tab':
         event.preventDefault();
         return this.mover(0, event.shiftKey ? -1 : 1);
@@ -1421,6 +1437,40 @@ export class BoletosLibroPage implements OnInit {
       col: Math.min(vista.cols.length - 1, Math.max(0, col + deltaCol)),
     });
     setTimeout(() => this.rejilla()?.nativeElement.querySelector('td.sel')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
+  }
+
+  private moverEnter(direccion: 1 | -1): void {
+    const vista = this.vista();
+    const motor = this.motor();
+    const hoja = this.hoja();
+    if (!vista || !motor || !hoja) return;
+    const actual = this.sel();
+    const bloques = this.bloquesEntrada(vista, motor, hoja.name);
+    const siguiente = moverEnSecuenciaEnter(bloques, actual.fila, actual.col, direccion);
+    if (siguiente) {
+      this.sel.set(siguiente);
+      setTimeout(() => this.rejilla()?.nativeElement.querySelector('td.sel')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
+      return;
+    }
+    this.mover(direccion, 0);
+  }
+
+  private bloquesEntrada(vista: Vista, motor: MotorLibro, nombreHoja: string): SecuenciaEnter[] {
+    return vista.cols.flatMap((columna, col) => {
+      const encabezado = motor.textoEdicion(nombreHoja, `${columna.letra}2`).trim().toUpperCase();
+      if (encabezado !== 'SERV') return [];
+      const zona = vista.cols[col + 1];
+      const filas = vista.filas
+        .map((fila, indice) => ({ fila, indice }))
+        .filter(({ fila, indice }) => {
+          if (indice < 2 || motor.protegida(nombreHoja, `${columna.letra}${fila.n}`)) return false;
+          const textoZona = zona ? motor.textoEdicion(nombreHoja, `${zona.letra}${fila.n}`).trim() : '';
+          const textoEntrada = motor.textoEdicion(nombreHoja, `${columna.letra}${fila.n}`).trim();
+          return !!textoZona || !!textoEntrada;
+        })
+        .map(({ indice }) => indice);
+      return filas.length ? [{ col, filas }] : [];
+    });
   }
 
   private enfocarRejilla(): void {

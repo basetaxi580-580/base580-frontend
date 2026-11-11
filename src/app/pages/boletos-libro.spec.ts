@@ -66,6 +66,36 @@ describe('Réplica de PAGO BOLETOS 2026.xlsx', () => {
     expect(recargado.ordenPestanas().slice(0, 2)).toEqual(['BASE NTE 26', 'BASE NTE 25']);
   });
 
+  it('copia un libro completo, conserva cambios y reconstruye la copia', () => {
+    const motor = new MotorLibro(libro);
+    motor.establecer('NORTE 26', 'A3', '7');
+    motor.establecerFormato('NORTE 26', 'A3', { b: true });
+    expect(motor.cambiarAnchoColumna('NORTE 26', 0, 180)).toBe(true);
+    expect(motor.copiarHoja('NORTE 26', { id: 'copia-norte', nombre: 'NORTE 26 COPIA' })).toBe(true);
+    expect(motor.textoEdicion('NORTE 26 COPIA', 'A3')).toBe('7');
+    expect(motor.formatoDe('NORTE 26 COPIA', 'A3')).toEqual({ b: true });
+    expect(motor.hoja('NORTE 26 COPIA')?.cols['A']).toBe(180);
+    motor.establecer('NORTE 26 COPIA', 'A3', '9');
+    expect(motor.textoEdicion('NORTE 26', 'A3')).toBe('7');
+
+    const recargado = new MotorLibro(libro);
+    recargado.cargarPersonalizadas(motor.personalizadas());
+    recargado.aplicarEstructura(motor.estructura());
+    recargado.reemplazarCapturas(motor.capturas());
+    recargado.reemplazarFormatos(motor.formatos());
+    expect(recargado.textoEdicion('NORTE 26 COPIA', 'A3')).toBe('9');
+    expect(recargado.formatoDe('NORTE 26 COPIA', 'A3')).toEqual({ b: true });
+    expect(recargado.hoja('NORTE 26 COPIA')?.cells['B3']).toEqual(recargado.hoja('NORTE 26')?.cells['B3']);
+
+    expect(recargado.renombrarPersonalizada('copia-norte', 'NORTE 26 CLON')).toBe(true);
+    const renombrada = new MotorLibro(libro);
+    renombrada.cargarPersonalizadas(recargado.personalizadas());
+    renombrada.aplicarEstructura(recargado.estructura());
+    renombrada.reemplazarCapturas(recargado.capturas());
+    renombrada.reemplazarFormatos(recargado.formatos());
+    expect(renombrada.textoEdicion('NORTE 26 CLON', 'A3')).toBe('9');
+  });
+
   it('permite renombrar hojas importadas y protege su eliminación si hay referencias', () => {
     const motor = new MotorLibro(libro);
     motor.establecer('MANUALES', 'ZZ999', "='BASE NTE 25'!A1");
