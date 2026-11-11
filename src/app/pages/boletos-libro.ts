@@ -20,7 +20,8 @@ export type OpLibro =
   | { hoja: string; tipo: 'fusionar'; fila: number; col: number; hastaFila: number; hastaCol: number }
   | { hoja: string; tipo: 'desfusionar'; fila: number; col: number }
   | { hoja: string; tipo: 'renHoja'; nuevo: string }
-  | { hoja: string; tipo: 'delHoja' };
+  | { hoja: string; tipo: 'delHoja' }
+  | { hoja: string; tipo: 'copiarHoja'; origen: string; plantilla: HojaLibro };
 /** [valor, fórmula, índice de estilo, valor calculado por Excel] */
 export type CeldaLibro = [ValorLibro, string | null, number, ValorLibro];
 
@@ -281,6 +282,22 @@ export class MotorLibro {
     return true;
   }
 
+  copiarHoja(origen: string, pestana: PestanaPersonalizada): boolean {
+    const fuente = this.hoja(origen);
+    if (!fuente || this.hoja(pestana.nombre)) return false;
+    const plantilla = clonarHoja(fuente);
+    plantilla.name = pestana.nombre;
+    for (const celda of Object.values(plantilla.cells)) if (celda[1]) celda[1] = renombrarReferenciaHoja(celda[1], fuente.name, plantilla.name);
+    this.personales.push({ ...pestana });
+    this.libro.sheets.push(plantilla);
+    this.ops.push({ hoja: plantilla.name, tipo: 'copiarHoja', origen: fuente.name, plantilla: clonarHoja(plantilla) });
+    this.entradas = copiarClaves(this.entradas, fuente.name, plantilla.name);
+    this.formatosMap = copiarClaves(this.formatosMap, fuente.name, plantilla.name);
+    this.indexar();
+    this.memo.clear();
+    return true;
+  }
+
   /** Cambia el ancho de una columna y conserva el último arrastre como una operación. */
   cambiarAnchoColumna(hojaNombre: string, col: number, ancho: number): boolean {
     const hoja = this.hoja(hojaNombre);
@@ -378,6 +395,9 @@ export class MotorLibro {
     this.formatosMap = renombrarClaves(this.formatosMap, anterior, nombre);
     hoja.name = nombre;
     pestana.nombre = nombre;
+    this.ops = this.ops.map((op) => op.tipo === 'copiarHoja' && op.hoja.trim().toUpperCase() === anterior.trim().toUpperCase()
+      ? { ...op, hoja: nombre, plantilla: { ...op.plantilla, name: nombre } }
+      : op);
     this.orden = this.orden.map((actual) => actual.trim().toUpperCase() === anterior.trim().toUpperCase() ? nombre : actual);
     this.indexar();
     this.memo.clear();
@@ -517,6 +537,14 @@ export class MotorLibro {
   private ejecutarOp(op: OpLibro): void {
     const hoja = this.hoja(op.hoja);
     if (!hoja) return;
+    if (op.tipo === 'copiarHoja') {
+      const copia = clonarHoja(op.plantilla);
+      copia.name = hoja.name;
+      const indice = this.libro.sheets.indexOf(hoja);
+      if (indice >= 0) this.libro.sheets[indice] = copia;
+      this.indexar();
+      return;
+    }
     if (op.tipo === 'renHoja') {
       for (const otra of this.libro.sheets) {
         for (const celda of Object.values(otra.cells)) if (celda[1]) celda[1] = renombrarReferenciaHoja(celda[1], hoja.name, op.nuevo);
@@ -674,6 +702,10 @@ function clonarFormatos(f: Record<string, EstiloLibro>): Record<string, EstiloLi
 /** Copia profunda del libro (el original se conserva intacto). */
 function clonarLibro(libro: LibroJson): LibroJson {
   return JSON.parse(JSON.stringify(libro)) as LibroJson;
+}
+
+function clonarHoja(hoja: HojaLibro): HojaLibro {
+  return JSON.parse(JSON.stringify(hoja)) as HojaLibro;
 }
 
 /** Desplaza las claves `Hoja!A1` de una hoja al insertar (delta>0) o eliminar (delta<0) una columna. */
@@ -848,6 +880,16 @@ function renombrarClaves<T>(mapa: Record<string, T>, anterior: string, nuevo: st
     const corte = clave.lastIndexOf('!');
     const hoja = corte < 0 ? '' : clave.slice(0, corte);
     salida[hoja.trim().toUpperCase() === anterior.trim().toUpperCase() ? `${nuevo}!${clave.slice(corte + 1)}` : clave] = valor;
+  }
+  return salida;
+}
+
+function copiarClaves<T>(mapa: Record<string, T>, origen: string, destino: string): Record<string, T> {
+  const salida = { ...mapa };
+  for (const [clave, valor] of Object.entries(mapa)) {
+    const corte = clave.lastIndexOf('!');
+    const hoja = corte < 0 ? '' : clave.slice(0, corte);
+    if (hoja.trim().toUpperCase() === origen.trim().toUpperCase()) salida[`${destino}!${clave.slice(corte + 1)}`] = valor;
   }
   return salida;
 }

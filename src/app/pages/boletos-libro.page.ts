@@ -215,6 +215,7 @@ const ANCHO_NUMEROS = 40;
         <div class="menu" role="menu" [style.left.px]="m.x" [style.top.px]="m.y" (mousedown)="$event.stopPropagation()">
           @if (m.tipo === 'pestana') {
             <button type="button" role="menuitem" (click)="agregarPestana(); cerrarMenu()"><span class="ic">＋</span><span>Añadir libro</span></button>
+            <button type="button" role="menuitem" (click)="copiarPestana(); cerrarMenu()"><span class="ic">⧉</span><span>Duplicar libro</span></button>
             <button type="button" role="menuitem" (click)="renombrarPestana(); cerrarMenu()"><span class="ic">✎</span><span>Cambiar nombre</span></button>
             <button type="button" role="menuitem" (click)="eliminarPestana(); cerrarMenu()"><span class="ic">✕</span><span>Eliminar</span></button>
           } @else if (m.tipo === 'celda') {
@@ -655,6 +656,21 @@ export class BoletosLibroPage implements OnInit {
     if (!motor || motor.hoja(nombre)) { this.avisar('Ya existe una pestaña con ese nombre.'); return; }
     const pestana = { id: crearIdPestana(), nombre };
     motor.agregarPersonalizada(pestana);
+    this.trasCambio();
+    this.irAHoja(nombre);
+  }
+
+  protected copiarPestana(): void {
+    const origen = this.menu()?.nombre;
+    const motor = this.motor();
+    if (!origen || !motor) { this.avisar('Selecciona una pestaña para copiarla.'); return; }
+    const valor = window.prompt('Nombre de la copia:', `${origen.trim()} copia`);
+    const nombre = valor?.trim() ?? '';
+    if (!nombre || nombre.includes('!') || nombre.length > 64) { if (valor !== null) this.avisar('El nombre debe tener entre 1 y 64 caracteres y no contener !.'); return; }
+    if (motor.hoja(nombre)) { this.avisar('Ya existe una pestaña con ese nombre.'); return; }
+    const antes = this.instantanea();
+    if (!motor.copiarHoja(origen, { id: crearIdPestana(), nombre })) { this.avisar('No se pudo copiar el libro.'); return; }
+    this.registrarDeshacer(antes);
     this.trasCambio();
     this.irAHoja(nombre);
   }
