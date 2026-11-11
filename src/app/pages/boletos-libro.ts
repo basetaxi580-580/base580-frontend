@@ -589,13 +589,17 @@ function hojaPersonalizada(nombre: string): HojaLibro {
 }
 
 function renombrarReferenciaHoja(formula: string, anterior: string, nuevo: string): string {
-  const anteriorNombre = anterior.trim();
+  const nombresAnteriores = [...new Set([anterior, anterior.trim()])].filter(Boolean);
   const nuevoNombre = nuevo.trim();
-  const anteriorExcel = anteriorNombre.replace(/'/g, "''");
   const nuevoExcel = nuevoNombre.replace(/'/g, "''");
-  let resultado = reemplazarSinMayusculas(formula, `'${anteriorExcel}'!`, `'${nuevoExcel}'!`);
-  resultado = reemplazarSinMayusculas(resultado, `"${anteriorNombre}"!`, `'${nuevoExcel}'!`);
-  return reemplazarSinMayusculas(resultado, `${anteriorNombre}!`, `${nuevoNombre}!`);
+  let resultado = formula;
+  for (const nombre of nombresAnteriores) {
+    const anteriorExcel = nombre.replace(/'/g, "''");
+    resultado = reemplazarSinMayusculas(resultado, `'${anteriorExcel}'!`, `'${nuevoExcel}'!`);
+    resultado = reemplazarSinMayusculas(resultado, `"${nombre}"!`, `'${nuevoExcel}'!`);
+    resultado = reemplazarSinMayusculas(resultado, `${nombre}!`, `${nuevoNombre}!`);
+  }
+  return resultado;
 }
 
 function reemplazarSinMayusculas(texto: string, busca: string, reemplazo: string): string {
