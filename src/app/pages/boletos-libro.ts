@@ -70,6 +70,8 @@ export type LibroJson = {
   sheets: HojaLibro[];
 };
 
+export type PestanaPersonalizada = { id: string; nombre: string };
+
 export type ValorCalculado =
   | { tipo: 'vacio' }
   | { tipo: 'numero'; n: number }
@@ -89,6 +91,7 @@ export class MotorLibro {
   private readonly original: LibroJson;
   /** Operaciones de columna aplicadas, en orden. */
   private ops: OpLibro[] = [];
+  private personales: PestanaPersonalizada[] = [];
   /** Copia de trabajo (el original con columnas insertadas/eliminadas). */
   libro: LibroJson;
 
@@ -228,7 +231,67 @@ export class MotorLibro {
     this.libro = clonarLibro(this.original);
     this.indexar();
     for (const op of this.ops) this.ejecutarOp(op);
+    const nuevas = this.personales.map((p) => hojaPersonalizada(p.nombre));
+    let ultimaBase = -1;
+    for (let i = 0; i < this.libro.sheets.length; i++) {
+      if (this.libro.sheets[i].name.trim().toUpperCase().startsWith('BASE ')) ultimaBase = i;
+    }
+    this.libro.sheets.splice(ultimaBase + 1, 0, ...nuevas);
+    this.indexar();
     this.memo.clear();
+  }
+
+  esOriginal(nombre: string): boolean { return this.original.sheets.some((h) => h.name.trim().toUpperCase() === nombre.trim().toUpperCase()); }
+
+  personalizadas(): PestanaPersonalizada[] { return this.personales.map((p) => ({ ...p })); }
+
+  agregarPersonalizada(pestana: PestanaPersonalizada): boolean {
+    if (this.hoja(pestana.nombre)) return false;
+    this.personales.push({ ...pestana });
+    this.libro.sheets.push(hojaPersonalizada(pestana.nombre));
+    this.indexar();
+    this.memo.clear();
+    return true;
+  }
+
+  cargarPersonalizadas(pestanas: PestanaPersonalizada[]): void {
+    this.personales = pestanas.map((p) => ({ ...p }));
+    this.reconstruir();
+  }
+
+  renombrarPersonalizada(id: string, nombre: string): boolean {
+    const pestana = this.personales.find((p) => p.id === id);
+    if (!pestana || this.hoja(nombre)) return false;
+    const anterior = pestana.nombre;
+    const hoja = this.hoja(anterior);
+    if (!hoja) return false;
+    for (const otra of this.libro.sheets) {
+      for (const celda of Object.values(otra.cells)) if (celda[1]) celda[1] = renombrarReferenciaHoja(celda[1], anterior, nombre);
+    }
+    this.entradas = renombrarClaves(this.entradas, anterior, nombre);
+    this.entradas = renombrarValoresFormula(this.entradas, anterior, nombre);
+    this.formatosMap = renombrarClaves(this.formatosMap, anterior, nombre);
+    hoja.name = nombre;
+    pestana.nombre = nombre;
+    this.indexar();
+    this.memo.clear();
+    return true;
+  }
+
+  eliminarPersonalizada(id: string): boolean {
+    const pestana = this.personales.find((p) => p.id === id);
+    if (!pestana || this.referenciasAHoja(pestana.nombre)) return false;
+    this.personales = this.personales.filter((p) => p.id !== id);
+    this.entradas = sinHoja(this.entradas, pestana.nombre);
+    this.formatosMap = sinHoja(this.formatosMap, pestana.nombre);
+    this.reconstruir();
+    return true;
+  }
+
+  private referenciasAHoja(nombre: string): boolean {
+    for (const hoja of this.libro.sheets) for (const celda of Object.values(hoja.cells)) if (celda[1] && contieneReferenciaHoja(celda[1], nombre)) return true;
+    for (const valor of Object.values(this.entradas)) if (valor.startsWith('=') && contieneReferenciaHoja(valor, nombre)) return true;
+    return false;
   }
 
   /** Inserta una columna en `col` (0-based). Desplaza celdas, fórmulas, anchos y capturas. */
@@ -480,6 +543,43 @@ export function mismasCapturas(a: Record<string, string>, b: Record<string, stri
   const ka = Object.keys(a);
   if (ka.length !== Object.keys(b).length) return false;
   return ka.every((clave) => clave in b && a[clave] === b[clave]);
+}
+
+function hojaPersonalizada(nombre: string): HojaLibro {
+  return { name: nombre, tab: '#70AD47', maxRow: 30, maxCol: 8, verFilas: 30, verCols: 8, cols: {}, rows: {}, hiddenCols: [], hiddenRows: [], freeze: null, cells: {} };
+}
+
+function renombrarReferenciaHoja(formula: string, anterior: string, nuevo: string): string {
+  const escapado = anterior.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const anteriorExcel = escapado.replace(/'/g, "''");
+  const nuevoExcel = nuevo.replace(/'/g, "''");
+  return formula
+    .replace(new RegExp(`'${anteriorExcel}'!`, 'gi'), `'${nuevoExcel}'!`)
+    .replace(new RegExp(`"${escapado}"!`, 'gi'), `'${nuevoExcel}'!`)
+    .replace(new RegExp(`${escapado}!`, 'gi'), `${nuevo}!`);
+}
+
+function contieneReferenciaHoja(formula: string, nombre: string): boolean {
+  return renombrarReferenciaHoja(formula, nombre, '__REFERENCIA__') !== formula;
+}
+
+function renombrarClaves<T>(mapa: Record<string, T>, anterior: string, nuevo: string): Record<string, T> {
+  const salida: Record<string, T> = {};
+  for (const [clave, valor] of Object.entries(mapa)) {
+    const corte = clave.lastIndexOf('!');
+    const hoja = corte < 0 ? '' : clave.slice(0, corte);
+    salida[hoja.trim().toUpperCase() === anterior.trim().toUpperCase() ? `${nuevo}!${clave.slice(corte + 1)}` : clave] = valor;
+  }
+  return salida;
+}
+
+function sinHoja<T>(mapa: Record<string, T>, nombre: string): Record<string, T> {
+  const prefijo = `${nombre}!`;
+  return Object.fromEntries(Object.entries(mapa).filter(([clave]) => !clave.startsWith(prefijo)));
+}
+
+function renombrarValoresFormula(mapa: Record<string, string>, anterior: string, nuevo: string): Record<string, string> {
+  return Object.fromEntries(Object.entries(mapa).map(([clave, valor]) => [clave, valor.startsWith('=') ? renombrarReferenciaHoja(valor, anterior, nuevo) : valor]));
 }
 
 function desdeValor(valor: ValorLibro): ValorCalculado {

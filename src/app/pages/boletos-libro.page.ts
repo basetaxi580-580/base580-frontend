@@ -13,7 +13,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { BoletosLibroApiService, ConflictoLibro, EstadoLibro } from '../data/boletos-libro-api.service';
+import { BoletosLibroApiService, ConflictoLibro, EstadoLibro, PestanaPersonalizada } from '../data/boletos-libro-api.service';
 import { parseTsv } from './boletos-grid';
 import {
   EstiloLibro,
@@ -43,9 +43,9 @@ type CeldaVista = {
 type FilaVista = { n: number; alto: number; celdas: CeldaVista[] };
 type Vista = { cols: { letra: string; ancho: number }[]; filas: FilaVista[]; ancho: number };
 type Seleccion = { fila: number; col: number };
-type MenuCtx = { x: number; y: number; tipo: 'celda' | 'columna'; col: number };
+type MenuCtx = { x: number; y: number; tipo: 'celda' | 'columna' | 'pestana'; col: number; nombre?: string };
 type EstadoGuardado = 'cargando' | 'guardado' | 'guardando' | 'pendiente' | 'error' | 'sin-conexion';
-type Instantanea = { estructura: string; capturas: Record<string, string>; formatos: Record<string, string> };
+type Instantanea = { estructura: string; capturas: Record<string, string>; formatos: Record<string, string>; pestanas: PestanaPersonalizada[] };
 type Respaldo = { base: Instantanea; actual: Instantanea };
 
 const CLAVE_RESPALDO = 'boletos-libro-respaldo';
@@ -189,9 +189,9 @@ const ANCHO_NUMEROS = 40;
           </table>
         </div>
 
-        <nav class="pestanas" aria-label="Hojas del libro">
+        <nav class="pestanas" aria-label="Hojas del libro" (contextmenu)="menuPestana(null, $event)">
           @for (h of hojas(); track h.name) {
-            <button type="button" [class.activa]="h.name === hoja()?.name" [style.--tab]="h.tab" (mousedown)="tabMousedown($event)" (click)="irAHoja(h.name)">
+            <button type="button" [class.activa]="h.name === hoja()?.name" [style.--tab]="h.tab" (mousedown)="tabMousedown($event)" (click)="irAHoja(h.name)" (contextmenu)="menuPestana(h.name, $event)">
               {{ h.name.trim() }}
             </button>
           }
@@ -207,7 +207,13 @@ const ANCHO_NUMEROS = 40;
       @if (menu(); as m) {
         <div class="menu-fondo" (mousedown)="cerrarMenu()" (contextmenu)="$event.preventDefault(); cerrarMenu()"></div>
         <div class="menu" role="menu" [style.left.px]="m.x" [style.top.px]="m.y" (mousedown)="$event.stopPropagation()">
-          @if (m.tipo === 'celda') {
+          @if (m.tipo === 'pestana') {
+            <button type="button" role="menuitem" (click)="agregarPestana(); cerrarMenu()"><span class="ic">＋</span><span>Añadir libro</span></button>
+            @if (pestanaPersonalizada(m.nombre)) {
+              <button type="button" role="menuitem" (click)="renombrarPestana(); cerrarMenu()"><span class="ic">✎</span><span>Cambiar nombre</span></button>
+              <button type="button" role="menuitem" (click)="eliminarPestana(); cerrarMenu()"><span class="ic">✕</span><span>Eliminar</span></button>
+            }
+          } @else if (m.tipo === 'celda') {
             <button type="button" role="menuitem" (click)="alternar('b'); cerrarMenu()"><b>N</b><span>Negrita</span></button>
             <button type="button" role="menuitem" (click)="alternar('i'); cerrarMenu()"><i>K</i><span>Cursiva</span></button>
             <button type="button" role="menuitem" (click)="alternar('u'); cerrarMenu()"><u>S</u><span>Subrayado</span></button>
@@ -316,7 +322,10 @@ export class BoletosLibroPage implements OnInit {
   protected readonly confirmandoRestaurar = signal(false);
   private readonly historial = signal({ deshacer: 0, rehacer: 0 });
 
-  protected readonly hojas = computed(() => this.motor()?.hojas ?? []);
+  protected readonly hojas = computed(() => {
+    this.cambios();
+    return this.motor()?.hojas ?? [];
+  });
   protected readonly hoja = computed<HojaLibro | null>(() => {
     const motor = this.motor();
     if (!motor) return null;
@@ -375,6 +384,7 @@ export class BoletosLibroPage implements OnInit {
       !mismasCapturas(motor.capturas(), this.base) ||
       !mismasCapturas(this.serializarFormatos(motor.formatos()), this.baseFormatos) ||
       JSON.stringify(motor.estructura()) !== this.baseEstructura
+      || !mismasPestanas(motor.personalizadas(), this.basePestanas)
     );
   });
   /** Estilo efectivo de la celda activa (para pintar la barra de formato). */
@@ -415,6 +425,7 @@ export class BoletosLibroPage implements OnInit {
   private baseFormatos: Record<string, string> = {};
   /** Última estructura (operaciones de columna) confirmada por el servidor, como JSON. */
   private baseEstructura = '[]';
+  private basePestanas: PestanaPersonalizada[] = [];
   private guardando = false;
   private repetir = false;
   private conflictos = 0;
@@ -480,6 +491,7 @@ export class BoletosLibroPage implements OnInit {
       !mismasCapturas(motor.capturas(), this.base) ||
       !mismasCapturas(this.serializarFormatos(motor.formatos()), this.baseFormatos) ||
       JSON.stringify(motor.estructura()) !== this.baseEstructura
+      || !mismasPestanas(motor.personalizadas(), this.basePestanas)
     ) {
       event.preventDefault();
     }
@@ -501,6 +513,54 @@ export class BoletosLibroPage implements OnInit {
     void this.router.navigate([], { relativeTo: this.route, queryParams: { hoja: nombre.trim() }, replaceUrl: true });
     if (apuntando) this.enfocarBarra();
     else this.enfocarRejilla();
+  }
+
+  protected menuPestana(nombre: string | null, event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.menu.set({ x: event.clientX, y: event.clientY, tipo: 'pestana', col: -1, nombre: nombre ?? undefined });
+  }
+
+  protected pestanaPersonalizada(nombre: string | undefined): boolean {
+    return !!nombre && !!this.motor()?.personalizadas().find((p) => p.nombre === nombre);
+  }
+
+  protected agregarPestana(): void {
+    const valor = window.prompt('Nombre de la nueva base:');
+    const texto = valor?.trim() ?? '';
+    if (!texto || texto.includes('!') || texto.length > 64) { if (valor !== null) this.avisar('El nombre debe tener entre 1 y 64 caracteres y no contener !.'); return; }
+    const nombre = texto.toUpperCase().startsWith('BASE ') ? texto : `BASE ${texto}`;
+    const motor = this.motor();
+    if (!motor || motor.hoja(nombre)) { this.avisar('Ya existe una pestaña con ese nombre.'); return; }
+    const pestana = { id: crearIdPestana(), nombre };
+    motor.agregarPersonalizada(pestana);
+    this.trasCambio();
+    this.irAHoja(nombre);
+  }
+
+  protected renombrarPestana(): void {
+    const nombre = this.menu()?.nombre;
+    const motor = this.motor();
+    const pestana = motor?.personalizadas().find((p) => p.nombre === nombre);
+    if (!motor || !pestana) return;
+    const valor = window.prompt('Nuevo nombre de la base:', pestana.nombre);
+    const texto = valor?.trim() ?? '';
+    if (!texto || texto.includes('!') || texto.length > 64) { if (valor !== null) this.avisar('El nombre debe tener entre 1 y 64 caracteres y no contener !.'); return; }
+    const nuevo = texto.toUpperCase().startsWith('BASE ') ? texto : `BASE ${texto}`;
+    if (motor.hoja(nuevo) || !motor.renombrarPersonalizada(pestana.id, nuevo)) { this.avisar('Ya existe una pestaña con ese nombre.'); return; }
+    if (this.hojaNombre() === nombre) this.hojaNombre.set(nuevo);
+    this.trasCambio();
+  }
+
+  protected eliminarPestana(): void {
+    const nombre = this.menu()?.nombre;
+    const motor = this.motor();
+    const pestana = motor?.personalizadas().find((p) => p.nombre === nombre);
+    if (!motor || !pestana) return;
+    if (!window.confirm(`¿Eliminar ${pestana.nombre}?`)) return;
+    if (!motor.eliminarPersonalizada(pestana.id)) { this.avisar('No se puede eliminar: una fórmula todavía referencia esta pestaña.'); return; }
+    if (this.hojaNombre() === nombre) this.hojaNombre.set(motor.hojaInicial().name);
+    this.trasCambio();
   }
 
   protected tabMousedown(event: MouseEvent): void {
@@ -945,7 +1005,7 @@ export class BoletosLibroPage implements OnInit {
     const prefijo = `${hoja.name}!`;
     const sinHoja = (m: Record<string, string>) => Object.fromEntries(Object.entries(m).filter(([clave]) => !clave.startsWith(prefijo)));
     const antes = this.instantanea();
-    const despues: Instantanea = { estructura: antes.estructura, capturas: sinHoja(antes.capturas), formatos: sinHoja(antes.formatos) };
+    const despues: Instantanea = { ...antes, capturas: sinHoja(antes.capturas), formatos: sinHoja(antes.formatos) };
     if (this.mismasInstantaneas(antes, despues)) return;
     this.registrarDeshacer(antes);
     this.restaurarInstantanea(despues);
@@ -1025,6 +1085,7 @@ export class BoletosLibroPage implements OnInit {
       estructura: motor ? JSON.stringify(motor.estructura()) : '[]',
       capturas: motor ? motor.capturas() : {},
       formatos: motor ? this.serializarFormatos(motor.formatos()) : {},
+      pestanas: motor ? motor.personalizadas() : [],
     };
   }
 
@@ -1032,12 +1093,13 @@ export class BoletosLibroPage implements OnInit {
     const motor = this.motor();
     if (!motor) return;
     motor.aplicarEstructura(this.parsearEstructura(inst.estructura));
+    motor.cargarPersonalizadas(inst.pestanas ?? []);
     motor.reemplazarCapturas(inst.capturas);
     motor.reemplazarFormatos(this.parsearFormatos(inst.formatos));
   }
 
   private mismasInstantaneas(a: Instantanea, b: Instantanea): boolean {
-    return a.estructura === b.estructura && mismasCapturas(a.capturas, b.capturas) && mismasCapturas(a.formatos, b.formatos);
+    return a.estructura === b.estructura && mismasCapturas(a.capturas, b.capturas) && mismasCapturas(a.formatos, b.formatos) && mismasPestanas(a.pestanas, b.pestanas);
   }
 
   private serializarFormatos(formatos: Record<string, EstiloLibro>): Record<string, string> {
@@ -1143,7 +1205,9 @@ export class BoletosLibroPage implements OnInit {
           if (mismaEstructura) {
             const capturas = fusionarCapturas(estado.capturas, respaldo.base.capturas, respaldo.actual.capturas);
             const formatos = fusionarCapturas(estado.formatos ?? {}, respaldo.base.formatos, respaldo.actual.formatos);
-            if (!mismasCapturas(capturas, estado.capturas) || !mismasCapturas(formatos, estado.formatos ?? {})) {
+            const pestanas = respaldo.actual.pestanas;
+            if (!mismasCapturas(capturas, estado.capturas) || !mismasCapturas(formatos, estado.formatos ?? {}) || !mismasPestanas(pestanas, estado.pestanasPersonalizadas ?? [])) {
+              motor.cargarPersonalizadas(pestanas);
               motor.reemplazarCapturas(capturas);
               motor.reemplazarFormatos(this.parsearFormatos(formatos));
               this.cambios.update((n) => n + 1);
@@ -1153,6 +1217,7 @@ export class BoletosLibroPage implements OnInit {
             }
           } else {
             motor.aplicarEstructura(this.parsearEstructura(respaldo.actual.estructura));
+            motor.cargarPersonalizadas(respaldo.actual.pestanas);
             motor.reemplazarCapturas(respaldo.actual.capturas);
             motor.reemplazarFormatos(this.parsearFormatos(respaldo.actual.formatos));
             this.cambios.update((n) => n + 1);
@@ -1171,11 +1236,13 @@ export class BoletosLibroPage implements OnInit {
         const motor = this.motor();
         if (respaldo && motor) {
           motor.aplicarEstructura(this.parsearEstructura(respaldo.actual.estructura));
+          motor.cargarPersonalizadas(respaldo.actual.pestanas);
           motor.reemplazarCapturas(respaldo.actual.capturas);
           motor.reemplazarFormatos(this.parsearFormatos(respaldo.actual.formatos));
           this.base = respaldo.base.capturas;
           this.baseFormatos = respaldo.base.formatos;
           this.baseEstructura = respaldo.base.estructura;
+          this.basePestanas = respaldo.base.pestanas;
           this.cambios.update((n) => n + 1);
         }
         this.timerGuardado = setTimeout(() => this.cargarEstado(), 10000);
@@ -1189,9 +1256,11 @@ export class BoletosLibroPage implements OnInit {
     this.base = { ...(estado.capturas ?? {}) };
     this.baseFormatos = { ...(estado.formatos ?? {}) };
     this.baseEstructura = estado.estructura ?? '[]';
+    this.basePestanas = (estado.pestanasPersonalizadas ?? []).map((p) => ({ ...p }));
     this.actualizado.set(estado.actualizado);
     const motor = this.motor();
     motor?.aplicarEstructura(this.parsearEstructura(this.baseEstructura));
+    motor?.cargarPersonalizadas(this.basePestanas);
     motor?.reemplazarCapturas(this.base);
     motor?.reemplazarFormatos(this.parsearFormatos(this.baseFormatos));
     this.cambios.update((n) => n + 1);
@@ -1215,10 +1284,12 @@ export class BoletosLibroPage implements OnInit {
     const capturas = motor.capturas();
     const formatos = this.serializarFormatos(motor.formatos());
     const estructura = JSON.stringify(motor.estructura());
+    const pestanas = motor.personalizadas();
     if (
       mismasCapturas(capturas, this.base) &&
       mismasCapturas(formatos, this.baseFormatos) &&
       estructura === this.baseEstructura &&
+      mismasPestanas(pestanas, this.basePestanas) &&
       this.version !== null
     ) {
       this.estado.set('guardado');
@@ -1227,7 +1298,7 @@ export class BoletosLibroPage implements OnInit {
     }
     this.guardando = true;
     this.estado.set('guardando');
-    this.api.guardar(capturas, formatos, estructura, this.version).subscribe({
+    this.api.guardar(capturas, formatos, estructura, pestanas, this.version).subscribe({
       next: (estado) => {
         this.guardando = false;
         this.conflictos = 0;
@@ -1235,13 +1306,15 @@ export class BoletosLibroPage implements OnInit {
         this.base = { ...(estado.capturas ?? {}) };
         this.baseFormatos = { ...(estado.formatos ?? {}) };
         this.baseEstructura = estado.estructura ?? '[]';
+        this.basePestanas = (estado.pestanasPersonalizadas ?? []).map((p) => ({ ...p }));
         this.actualizado.set(estado.actualizado);
         this.cambios.update((n) => n + 1);
         const pendiente =
           this.repetir ||
           !mismasCapturas(motor.capturas(), this.base) ||
           !mismasCapturas(this.serializarFormatos(motor.formatos()), this.baseFormatos) ||
-          JSON.stringify(motor.estructura()) !== this.baseEstructura;
+          JSON.stringify(motor.estructura()) !== this.baseEstructura ||
+          !mismasPestanas(motor.personalizadas(), this.basePestanas);
         if (pendiente) {
           this.repetir = false;
           this.guardar();
@@ -1256,13 +1329,15 @@ export class BoletosLibroPage implements OnInit {
         if (conflicto && this.conflictos < MAX_CONFLICTOS) {
           this.conflictos++;
           const serverE = conflicto.estructura ?? '[]';
-          if (serverE !== this.baseEstructura || serverE !== JSON.stringify(motor.estructura())) {
+          if (serverE !== this.baseEstructura || serverE !== JSON.stringify(motor.estructura()) || !mismasPestanas(conflicto.pestanasPersonalizadas ?? [], motor.personalizadas())) {
             // Divergencia de columnas: se adopta la estructura del servidor para no corromper el libro.
             this.version = conflicto.version;
             this.base = { ...(conflicto.capturas ?? {}) };
             this.baseFormatos = { ...(conflicto.formatos ?? {}) };
             this.baseEstructura = serverE;
+            this.basePestanas = (conflicto.pestanasPersonalizadas ?? []).map((p) => ({ ...p }));
             motor.aplicarEstructura(this.parsearEstructura(serverE));
+            motor.cargarPersonalizadas(this.basePestanas);
             motor.reemplazarCapturas(this.base);
             motor.reemplazarFormatos(this.parsearFormatos(this.baseFormatos));
             this.cambios.update((n) => n + 1);
@@ -1295,7 +1370,8 @@ export class BoletosLibroPage implements OnInit {
     const sinCambios =
       mismasCapturas(motor.capturas(), this.base) &&
       mismasCapturas(this.serializarFormatos(motor.formatos()), this.baseFormatos) &&
-      JSON.stringify(motor.estructura()) === this.baseEstructura;
+      JSON.stringify(motor.estructura()) === this.baseEstructura &&
+      mismasPestanas(motor.personalizadas(), this.basePestanas);
     if (this.estado() === 'cargando' || !sinCambios) return;
     this.api.estado().subscribe({
       next: (estado) => {
@@ -1303,7 +1379,8 @@ export class BoletosLibroPage implements OnInit {
         const siguenSinCambios =
           mismasCapturas(motor.capturas(), this.base) &&
           mismasCapturas(this.serializarFormatos(motor.formatos()), this.baseFormatos) &&
-          JSON.stringify(motor.estructura()) === this.baseEstructura;
+          JSON.stringify(motor.estructura()) === this.baseEstructura &&
+          mismasPestanas(motor.personalizadas(), this.basePestanas);
         if (!siguenSinCambios) return;
         this.pilaDeshacer = [];
         this.pilaRehacer = [];
@@ -1319,8 +1396,8 @@ export class BoletosLibroPage implements OnInit {
     const motor = this.motor();
     if (!motor) return;
     const respaldo: Respaldo = {
-      base: { estructura: this.baseEstructura, capturas: this.base, formatos: this.baseFormatos },
-      actual: { estructura: JSON.stringify(motor.estructura()), capturas: motor.capturas(), formatos: this.serializarFormatos(motor.formatos()) },
+      base: { estructura: this.baseEstructura, capturas: this.base, formatos: this.baseFormatos, pestanas: this.basePestanas },
+      actual: { estructura: JSON.stringify(motor.estructura()), capturas: motor.capturas(), formatos: this.serializarFormatos(motor.formatos()), pestanas: motor.personalizadas() },
     };
     escribirLocal(CLAVE_RESPALDO, JSON.stringify(respaldo));
   }
@@ -1481,6 +1558,8 @@ function leerRespaldo(): Respaldo | null {
     parsed.actual.formatos ??= {};
     parsed.base.estructura ??= '[]';
     parsed.actual.estructura ??= '[]';
+    parsed.base.pestanas ??= [];
+    parsed.actual.pestanas ??= [];
     return parsed;
   } catch {
     return null;
@@ -1493,4 +1572,12 @@ function borrarRespaldo(): void {
   } catch {
     // Ignorado.
   }
+}
+
+function crearIdPestana(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `pestana-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function mismasPestanas(a: PestanaPersonalizada[], b: PestanaPersonalizada[]): boolean {
+  return a.length === b.length && a.every((p, i) => p.id === b[i]?.id && p.nombre === b[i]?.nombre);
 }

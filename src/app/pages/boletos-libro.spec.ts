@@ -5,6 +5,35 @@ import { LibroJson, MotorLibro, formatear, fusionarCapturas, redondearExcel } fr
 const libro = libroJson as unknown as LibroJson;
 
 describe('Réplica de PAGO BOLETOS 2026.xlsx', () => {
+
+  it('crea, renombra y elimina una pestaña BASE personalizada sin tocar las 19 originales', () => {
+    const motor = new MotorLibro(libro);
+    const pestana = { id: 'base-nueva', nombre: 'BASE NUEVA' };
+    expect(motor.agregarPersonalizada(pestana)).toBe(true);
+    motor.establecer('BASE NUEVA', 'A1', '42');
+    motor.establecerFormato('BASE NUEVA', 'A1', { b: true });
+    motor.establecer('NORTE 26', 'A1', '=\'BASE NUEVA\'!A1');
+    expect(motor.numero('NORTE 26', 'A1')).toBe(42);
+
+    expect(motor.renombrarPersonalizada('base-nueva', 'BASE RENOMBRADA')).toBe(true);
+    expect(motor.textoEdicion('BASE RENOMBRADA', 'A1')).toBe('42');
+    expect(motor.textoEdicion('NORTE 26', 'A1')).toBe("='BASE RENOMBRADA'!A1");
+    expect(motor.numero('NORTE 26', 'A1')).toBe(42);
+    expect(motor.eliminarPersonalizada('base-nueva')).toBe(false);
+    motor.establecer('NORTE 26', 'A1', '');
+    expect(motor.eliminarPersonalizada('base-nueva')).toBe(true);
+    expect(motor.hojas).toHaveLength(19);
+    expect(motor.esOriginal('BASE NTE 25')).toBe(true);
+    expect(motor.renombrarPersonalizada('missing', 'BASE OTRA')).toBe(false);
+  });
+
+  it('mantiene identificadores y rechaza nombres personalizados duplicados', () => {
+    const motor = new MotorLibro(libro);
+    expect(motor.agregarPersonalizada({ id: 'a', nombre: 'BASE CLIENTE' })).toBe(true);
+    expect(motor.agregarPersonalizada({ id: 'b', nombre: 'BASE CLIENTE' })).toBe(false);
+    expect(motor.personalizadas()).toEqual([{ id: 'a', nombre: 'BASE CLIENTE' }]);
+  });
+
   it('trae las 19 hojas en el orden del Excel', () => {
     expect(libro.sheets.map((hoja) => hoja.name.trim())).toEqual([
       'BASE NTE 25',
