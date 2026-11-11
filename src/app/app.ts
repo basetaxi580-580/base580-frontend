@@ -40,7 +40,6 @@ export class App {
     { label: 'Búsqueda', path: '/buscar', icon: '⌕' },
     { label: 'Credenciales', path: '/credenciales', icon: '◉' },
     { label: 'Engomados', path: '/engomados', icon: '▣' },
-    { label: 'Lista de precios', path: '/lista-precios', icon: '$' },
     { label: 'Validación', path: '/validacion', icon: '✓' },
   ];
 

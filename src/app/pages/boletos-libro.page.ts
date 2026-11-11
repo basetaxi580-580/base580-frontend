@@ -12,7 +12,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { BoletosLibroApiService, ConflictoLibro, EstadoLibro, PestanaPersonalizada } from '../data/boletos-libro-api.service';
 import { parseTsv } from './boletos-grid';
 import {
@@ -57,7 +57,7 @@ const ANCHO_NUMEROS = 40;
 
 @Component({
   selector: 'app-boletos-libro',
-  imports: [RouterLink],
+  imports: [],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="libro">
@@ -78,7 +78,6 @@ const ANCHO_NUMEROS = 40;
           } @else {
             <button type="button" [disabled]="!hojaConCapturas()" (click)="confirmandoRestaurar.set(true)">Restaurar hoja</button>
           }
-          <a routerLink="/boletos/anterior">Versión anterior</a>
         </div>
       </header>
 
@@ -240,62 +239,70 @@ const ANCHO_NUMEROS = 40;
   styles: `
     /* contain: el ancho de la tabla no empuja el layout; el scroll queda dentro de la rejilla. */
     :host { display: block; contain: inline-size; }
-    .libro { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    .libro { display: flex; flex-direction: column; gap: 12px; min-width: 0; color: #463255; }
+    .barra, .fx, .formato { border: 1px solid rgba(236, 72, 153, 0.16); background: rgba(255, 255, 255, 0.78); box-shadow: 0 8px 24px rgba(88, 28, 135, 0.08); }
+    .barra { padding: 12px 14px; border-radius: 18px; }
     .barra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
     h1 { margin: 0; font-size: 1.25rem; color: #3a214e; }
     .fuente { font-size: 0.8rem; color: #7c3aed; }
     .acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-    .acciones button, .acciones a { border: 1px solid rgba(124, 58, 237, 0.25); background: #fff; color: #7c3aed; border-radius: 10px; padding: 6px 10px; font-weight: 700; font-size: 0.85rem; text-decoration: none; cursor: pointer; }
+    .acciones button, .acciones a { border: 1px solid rgba(124, 58, 237, 0.2); background: rgba(244, 114, 182, 0.1); color: #7c3aed; border-radius: 999px; padding: 7px 11px; font-weight: 700; font-size: 0.85rem; text-decoration: none; cursor: pointer; }
     .acciones button:disabled { opacity: 0.45; cursor: default; }
-    .acciones .guardar { background: #217346; border-color: #217346; color: #fff; }
-    .acciones .guardar:disabled { background: #fff; color: #217346; }
+    .acciones .guardar { background: linear-gradient(135deg, #ec4899, #a855f7); border-color: transparent; color: #fff; }
+    .acciones .guardar:disabled { background: rgba(244, 114, 182, 0.1); color: #7c3aed; }
     .acciones .peligro { background: #b91c1c; border-color: #b91c1c; color: #fff; }
     .confirmar { font-size: 0.85rem; color: #3a214e; }
     .estado { font-size: 0.8rem; padding: 4px 10px; border-radius: 999px; background: #ede9fe; color: #5b21b6; }
     .estado.guardado { background: #dcfce7; color: #166534; }
     .estado.error, .estado.sin-conexion { background: #fee2e2; color: #991b1b; }
-    .fx { display: flex; align-items: center; gap: 6px; border: 1px solid #d4d4d4; background: #fff; border-radius: 8px; padding: 4px 6px; }
+    .fx { display: flex; align-items: center; gap: 6px; border-radius: 14px; padding: 6px 8px; }
     .ref { min-width: 56px; padding-right: 6px; border-right: 1px solid #e5e5e5; text-align: center; font: 600 13px Calibri, Carlito, Arial, sans-serif; }
     .fx-ico { font-style: italic; color: #6b7280; }
     .fx-input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font: 14px Calibri, Carlito, Arial, sans-serif; }
     .candado { white-space: nowrap; font-size: 0.75rem; color: #92400e; background: #fef3c7; border-radius: 6px; padding: 2px 6px; }
     .apuntar { white-space: nowrap; font-size: 0.75rem; color: #0f5132; background: #d3e9dc; border-radius: 6px; padding: 2px 8px; }
-    .formato { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; border: 1px solid #d4d4d4; background: #fff; border-radius: 8px; padding: 4px 6px; }
-    .formato button { min-width: 30px; height: 28px; border: 1px solid transparent; background: transparent; color: #333; border-radius: 6px; cursor: pointer; font-size: 0.9rem; line-height: 1; padding: 0 6px; }
-    .formato button:hover { background: #f3f0fa; }
-    .formato button.on { background: #ede9fe; border-color: #7c3aed; color: #5b21b6; }
-    .formato select { height: 28px; border: 1px solid #d4d4d4; border-radius: 6px; background: #fff; font-size: 0.85rem; }
-    .formato .color { display: inline-flex; align-items: center; gap: 2px; height: 28px; padding: 0 4px; border: 1px solid #d4d4d4; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+    .formato { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; border-radius: 16px; padding: 7px 8px; }
+    .formato button { min-width: 30px; height: 30px; border: 1px solid transparent; background: transparent; color: #3a214e; border-radius: 9px; cursor: pointer; font-size: 0.9rem; line-height: 1; padding: 0 7px; }
+    .formato button:hover, .formato button.on { background: rgba(244, 114, 182, 0.18); color: #7c3aed; }
+    .formato button.on { border-color: rgba(124, 58, 237, 0.35); }
+    .formato select { height: 30px; border: 1px solid rgba(168, 85, 247, 0.2); border-radius: 9px; background: #fff; color: #3a214e; font-size: 0.85rem; }
+    .formato .color { display: inline-flex; align-items: center; gap: 2px; height: 30px; padding: 0 5px; border: 1px solid rgba(168, 85, 247, 0.2); border-radius: 9px; cursor: pointer; font-size: 0.85rem; color: #7c3aed; }
     .formato .color input { width: 22px; height: 20px; border: 0; background: transparent; padding: 0; cursor: pointer; }
     .formato .sep { width: 1px; align-self: stretch; background: #e5e5e5; margin: 2px; }
-    .rejilla { overflow: auto; max-height: calc(100vh - 250px); min-height: 320px; border: 1px solid #d4d4d4; background: #fff; outline: none; }
-    .rejilla:focus-visible { box-shadow: 0 0 0 2px rgba(33, 115, 70, 0.35); }
+    .rejilla { overflow: auto; max-height: calc(100vh - 250px); min-height: 320px; border: 1px solid rgba(236, 72, 153, 0.2); border-radius: 16px 16px 0 0; background: #fff; outline: none; box-shadow: 0 10px 28px rgba(88, 28, 135, 0.08); }
+    .rejilla:focus-visible { box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.24), 0 10px 28px rgba(88, 28, 135, 0.08); }
     table { border-collapse: separate; border-spacing: 0; table-layout: fixed; font: 11pt Calibri, Carlito, Arial, sans-serif; color: #000; }
     col.c-num { width: 40px; }
     th { background: #f3f3f3; color: #444; font: 400 12px Calibri, Carlito, Arial, sans-serif; border-right: 1px solid #d4d4d4; border-bottom: 1px solid #d4d4d4; user-select: none; }
     thead th { position: sticky; top: 0; z-index: 3; height: 20px; }
     .fila-h { position: sticky; left: 0; z-index: 2; text-align: center; }
     .esquina { left: 0; z-index: 4; }
-    th.activa { background: #d3e9dc; color: #0f5132; font-weight: 700; }
+    th.activa { background: #fce7f3; color: #9f1239; font-weight: 700; }
     td { position: relative; padding: 0 3px; overflow: hidden; white-space: nowrap; vertical-align: bottom; border-right: 1px solid #e1e1e1; border-bottom: 1px solid #e1e1e1; cursor: cell; }
     td.desborda { overflow: visible; }
     .flujo { display: flex; width: 100%; }
     .flujo .txt { flex: none; position: relative; z-index: 1; white-space: nowrap; }
-    td.sel { box-shadow: inset 0 0 0 2px #217346 !important; z-index: 2; }
+    td.sel { box-shadow: inset 0 0 0 2px #7c3aed !important; z-index: 2; }
     .contable { display: flex; justify-content: space-between; gap: 4px; }
-    .editor { position: absolute; inset: 0; z-index: 5; width: 100%; height: 100%; box-sizing: border-box; padding: 0 2px; border: 2px solid #217346; outline: none; background: #fff; font: inherit; }
-    .pestanas { position: sticky; bottom: 0; z-index: 10; display: flex; gap: 2px; overflow-x: auto; padding: 4px 0; background: #fff; box-shadow: 0 -3px 8px rgba(58, 33, 78, 0.12); }
-    .pestanas button { flex: 0 0 auto; white-space: nowrap; cursor: pointer; padding: 6px 12px; border: 1px solid #d4d4d4; border-top: 3px solid var(--tab, #d4d4d4); border-radius: 0 0 6px 6px; background: #f3f3f3; color: #333; font: 600 13px Calibri, Carlito, Arial, sans-serif; }
-    .pestanas button.activa { background: #fff; color: #217346; box-shadow: inset 0 -2px 0 #217346; }
-    .aviso { position: fixed; right: 20px; bottom: 20px; z-index: 50; max-width: 340px; padding: 10px 14px; border-radius: 12px; background: #3a214e; color: #fff; font-size: 0.9rem; }
+    .editor { position: absolute; inset: 0; z-index: 5; width: 100%; height: 100%; box-sizing: border-box; padding: 0 2px; border: 2px solid #7c3aed; outline: none; background: #fff; font: inherit; }
+    .pestanas { position: sticky; bottom: 0; z-index: 10; display: flex; gap: 6px; overflow-x: auto; padding: 8px; background: rgba(255, 255, 255, 0.82); border: 1px solid rgba(236, 72, 153, 0.16); border-radius: 0 0 16px 16px; box-shadow: 0 -8px 20px rgba(88, 28, 135, 0.1); }
+    .pestanas button { flex: 0 0 auto; white-space: nowrap; cursor: pointer; padding: 8px 13px; border: 1px solid rgba(168, 85, 247, 0.16); border-top: 3px solid var(--tab, #d4d4d4); border-radius: 10px; background: rgba(244, 114, 182, 0.1); color: #7c3aed; font: 700 13px Calibri, Carlito, Arial, sans-serif; transition: transform .2s ease, background .2s ease, box-shadow .2s ease; }
+    .pestanas button:hover { transform: translateY(-2px); background: rgba(244, 114, 182, 0.18); }
+    .pestanas button.activa { background: linear-gradient(135deg, #ec4899, #a855f7); color: #fff; box-shadow: 0 5px 12px rgba(168, 85, 247, 0.24); }
+    .aviso { position: fixed; right: 20px; bottom: 20px; z-index: 50; max-width: 340px; padding: 10px 14px; border-radius: 14px; background: #3a214e; color: #fff; font-size: 0.9rem; box-shadow: 0 12px 30px rgba(88, 28, 135, 0.2); }
     .menu-fondo { position: fixed; inset: 0; z-index: 60; }
-    .menu { position: fixed; z-index: 61; min-width: 200px; padding: 4px; background: #fff; border: 1px solid #d4d4d4; border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); display: flex; flex-direction: column; }
-    .menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 10px; border: 0; background: transparent; border-radius: 6px; cursor: pointer; font: 500 0.85rem Calibri, Carlito, Arial, sans-serif; color: #333; text-align: left; }
-    .menu button:hover { background: #f3f0fa; color: #5b21b6; }
+    .menu { position: fixed; z-index: 61; min-width: 220px; padding: 6px; background: #fff; border: 1px solid rgba(236, 72, 153, 0.2); border-radius: 14px; box-shadow: 0 12px 30px rgba(88, 28, 135, 0.16); display: flex; flex-direction: column; }
+    .menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 11px; border: 0; background: transparent; border-radius: 10px; cursor: pointer; font: 600 0.85rem Calibri, Carlito, Arial, sans-serif; color: #3a214e; text-align: left; }
+    .menu button:hover { background: rgba(244, 114, 182, 0.16); color: #7c3aed; }
     .menu button .ic, .menu button b, .menu button i, .menu button u { display: inline-block; width: 18px; text-align: center; color: #7c3aed; font-style: normal; text-decoration: none; }
-    .menu-sep { height: 1px; background: #e5e5e5; margin: 4px 2px; }
+    .menu-sep { height: 1px; background: rgba(168, 85, 247, 0.16); margin: 5px 2px; }
     .error { color: #991b1b; }
     .cargando { color: #7c3aed; }
+    @media (max-width: 700px) {
+      .barra { align-items: stretch; }
+      .acciones { justify-content: flex-start; }
+      .rejilla { max-height: calc(100vh - 310px); }
+    }
   `,
 })
 export class BoletosLibroPage implements OnInit {

@@ -26,11 +26,6 @@ export const routes: Routes = [
     loadComponent: async () => (await import('./pages/boletos-libro.page')).BoletosLibroPage,
   },
   {
-    // Versión anterior (modelo de tarifas), mientras se valida la réplica.
-    path: 'boletos/anterior',
-    loadComponent: async () => (await import('./pages/boletos.page')).BoletosPage,
-  },
-  {
     path: 'operaciones',
     loadComponent: async () => (await import('./pages/operations.page')).OperationsPage,
   },
@@ -67,10 +62,6 @@ export const routes: Routes = [
     path: 'engomados',
     loadComponent: async () => (await import('./pages/placeholder.page')).PlaceholderPage,
     data: placeholder('Engomados', 'Asignación y control de engomados.'),
-  },
-  {
-    path: 'lista-precios',
-    loadComponent: async () => (await import('./pages/boletos.page')).BoletosPage,
   },
   {
     path: 'buscar',
