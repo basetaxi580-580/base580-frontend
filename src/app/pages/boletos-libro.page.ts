@@ -284,7 +284,7 @@ const ANCHO_NUMEROS = 40;
     td.sel { box-shadow: inset 0 0 0 2px #217346 !important; z-index: 2; }
     .contable { display: flex; justify-content: space-between; gap: 4px; }
     .editor { position: absolute; inset: 0; z-index: 5; width: 100%; height: 100%; box-sizing: border-box; padding: 0 2px; border: 2px solid #217346; outline: none; background: #fff; font: inherit; }
-    .pestanas { display: flex; gap: 2px; overflow-x: auto; padding-bottom: 4px; }
+    .pestanas { position: sticky; bottom: 0; z-index: 10; display: flex; gap: 2px; overflow-x: auto; padding: 4px 0; background: #fff; box-shadow: 0 -3px 8px rgba(58, 33, 78, 0.12); }
     .pestanas button { flex: 0 0 auto; white-space: nowrap; cursor: pointer; padding: 6px 12px; border: 1px solid #d4d4d4; border-top: 3px solid var(--tab, #d4d4d4); border-radius: 0 0 6px 6px; background: #f3f3f3; color: #333; font: 600 13px Calibri, Carlito, Arial, sans-serif; }
     .pestanas button.activa { background: #fff; color: #217346; box-shadow: inset 0 -2px 0 #217346; }
     .aviso { position: fixed; right: 20px; bottom: 20px; z-index: 50; max-width: 340px; padding: 10px 14px; border-radius: 12px; background: #3a214e; color: #fff; font-size: 0.9rem; }
