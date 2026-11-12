@@ -25,6 +25,11 @@ export type MemberProfile = {
   cardPayment: string;
   history: MemberHistoryEvent[];
   notes: string;
+  licenseExpiry: string;
+  insuranceExpiry: string;
+  phone: string;
+  vehicleYear: string;
+  vehicleBrand: string;
 };
 
 export type AuditEvent = {
@@ -70,6 +75,11 @@ export class MemberStore {
       personalSaving: 'N/A',
       cardPayment: 'N/A',
       notes: 'Perfil operativo base para demostración del CRM moderno.',
+      licenseExpiry: '',
+      insuranceExpiry: '',
+      phone: '',
+      vehicleYear: '',
+      vehicleBrand: '',
       history: [
         {
           title: 'Ficha cargada',
@@ -259,6 +269,11 @@ export class MemberStore {
         personalSaving: item.personalSaving,
         cardPayment: item.cardPayment,
         notes: item.notes,
+        licenseExpiry: item.licenseExpiry,
+        insuranceExpiry: item.insuranceExpiry,
+        phone: item.phone,
+        vehicleYear: item.vehicleYear,
+        vehicleBrand: item.vehicleBrand,
         history: item.history.map((historyItem) => ({ ...historyItem })),
       })),
       catalogs: {
@@ -278,7 +293,12 @@ export class MemberStore {
 
     this.members.set(Object.fromEntries(state.members.map((member) => [
       member.id,
-      { ...structuredClone(member), history: structuredClone(member.history ?? []) },
+      { ...structuredClone(member), history: structuredClone(member.history ?? []),
+        licenseExpiry: member.licenseExpiry ?? '',
+        insuranceExpiry: member.insuranceExpiry ?? '',
+        phone: member.phone ?? '',
+        vehicleYear: member.vehicleYear ?? '',
+        vehicleBrand: member.vehicleBrand ?? '' },
     ])));
 
     this.engomados.set(state.catalogs?.engomados ?? []);
