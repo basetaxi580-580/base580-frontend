@@ -1,9 +1,9 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectorRef, Component, inject, OnDestroy } from '@angular/core';
+import { ChangeDetectorRef, Component, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
-import { AppStateDto, BackendSyncService } from '../data/backend-api.service';
+import { BackendSyncService } from '../data/backend-api.service';
 import { MemberStore, MemberProfile } from '../data/member.store';
 
 @Component({
@@ -22,36 +22,41 @@ import { MemberStore, MemberProfile } from '../data/member.store';
         <button type="button" *ngIf="sync.loadStatus() === 'error'" [disabled]="busy || sync.pendingChanges()" (click)="reload()">Recargar desde el servidor</button>
       </div>
       <nav *ngIf="sync.loadStatus() === 'ready'" class="action-row" aria-label="Opciones de captura">
-        <button type="button" class="secondary" [disabled]="busy" (click)="showList()">Lista</button>
-        <button type="button" class="primary" [disabled]="busy || (viewingCurrent && !!draft)" (click)="create()">Crear socio</button>
-        <button type="button" class="secondary" [disabled]="busy" (click)="compareCurrent()">Ver versión actual</button>
-        <button type="button" class="secondary" *ngIf="draft" [disabled]="busy" (click)="showDraft()">Ver mi borrador</button>
-        <button type="button" class="primary" *ngIf="draft" [disabled]="busy" (click)="publish()">Publicar mi borrador</button>
+        <button type="button" [class.primary]="view === 'list'" [class.secondary]="view !== 'list'" [disabled]="busy" (click)="showList()">Lista</button>
+        <button type="button" [class.primary]="view === 'form'" [class.secondary]="view !== 'form'" [disabled]="busy" (click)="create()">Crear socio</button>
       </nav>
-      <article class="capture-card" *ngIf="remoteState">
-        <h3>Cambios en la versión actual</h3>
-        <p>Si abres la versión actual, cambiará lo que ves en esta página. El borrador guardado se conservará; los cambios del formulario que aún no hayas guardado se perderán.</p>
-        <ul><li *ngFor="let change of remoteChanges">{{ change }}</li></ul>
-        <div class="action-row">
-          <button type="button" class="primary" (click)="showCurrent()">Sí, ver versión actual</button>
-          <button type="button" class="secondary" *ngIf="draft" (click)="rebaseDraft()">Actualizar mi borrador con la versión actual</button>
-          <button type="button" class="secondary" (click)="remoteState = null">Cancelar</button>
-        </div>
-      </article>
       <p class="save-note" role="status" *ngIf="message">{{ message }}</p>
       <div *ngIf="syncError" role="alert">
         <p>{{ syncError }}</p>
-        <button type="button" [disabled]="busy" (click)="retry()">Reintentar sincronización</button>
+        <button type="button" [disabled]="busy" (click)="reload()">Recargar desde el servidor</button>
       </div>
 
       <article class="capture-card" *ngIf="sync.loadStatus() === 'ready' && view === 'list'">
         <div class="card-head"><h3>Lista de socios</h3></div>
         <p *ngIf="members.length === 0">No hay socios capturados.</p>
         <div class="member-row" *ngFor="let member of members">
-          <div><strong>{{ member.name }}</strong><p>ID {{ member.id }} · {{ member.status }}</p></div>
-          <div class="action-row">
-            <button type="button" class="secondary" [disabled]="busy || (viewingCurrent && !!draft)" (click)="edit(member.id)">Editar</button>
-            <button type="button" class="secondary" [disabled]="busy || (viewingCurrent && !!draft)" (click)="remove(member)">Eliminar</button>
+          <div class="member-main" role="button" tabindex="0" (click)="toggle(member.id)">
+            <strong>{{ member.name }}</strong>
+            <p>ID {{ member.id }} · {{ member.status }}<span class="chevron">{{ expandedId === member.id ? '▲' : '▼' }}</span></p>
+          </div>
+          <div class="member-detail" *ngIf="expandedId === member.id">
+            <dl class="detail-grid">
+              <div><dt>Sitio</dt><dd>{{ member.site || '—' }}</dd></div>
+              <div><dt>Placas</dt><dd>{{ member.plate || '—' }}</dd></div>
+              <div><dt>Engomado</dt><dd>{{ member.sticker || '—' }}</dd></div>
+              <div><dt>Fecha de alta</dt><dd>{{ member.expiry || '—' }}</dd></div>
+              <div><dt>Venc. Licencia</dt><dd>{{ member.licenseExpiry || '—' }}</dd></div>
+              <div><dt>Venc. Seguro</dt><dd>{{ member.insuranceExpiry || '—' }}</dd></div>
+              <div><dt>Celular</dt><dd>{{ member.phone || '—' }}</dd></div>
+              <div><dt>Modelo</dt><dd>{{ member.vehicleYear || '—' }}</dd></div>
+              <div><dt>Marca</dt><dd>{{ member.vehicleBrand || '—' }}</dd></div>
+              <div><dt>Estatus</dt><dd>{{ member.status }}</dd></div>
+              <div class="detail-full"><dt>Observaciones</dt><dd>{{ member.notes || '—' }}</dd></div>
+            </dl>
+            <div class="action-row">
+              <button type="button" class="primary" [disabled]="busy" (click)="edit(member.id)">Editar</button>
+              <button type="button" class="secondary" [disabled]="busy" (click)="remove(member)">Eliminar</button>
+            </div>
           </div>
         </div>
       </article>
@@ -64,7 +69,27 @@ import { MemberStore, MemberProfile } from '../data/member.store';
           <label><span>Sitio</span><input [(ngModel)]="model.site" name="site" type="text" /></label>
           <label><span>Placas</span><input [(ngModel)]="model.plate" name="plate" type="text" /></label>
           <label><span>Engomado</span><input [(ngModel)]="model.sticker" name="sticker" type="text" /></label>
-          <label><span>Fecha de vencimiento</span><input [(ngModel)]="model.expiry" name="expiry" type="text" /></label>
+          <label><span>Fecha de alta</span>
+            <input [(ngModel)]="model.expiry" name="expiry" type="text"
+              placeholder="aaaammdd" maxlength="8" pattern="\\d{8}"
+              [title]="'Formato: AAAAMMDD (ej. 20261231)'" /></label>
+          <label><span>Venc. Licencia</span>
+            <input [(ngModel)]="model.licenseExpiry" name="licenseExpiry" type="text"
+              placeholder="aaaammdd" maxlength="8" pattern="\\d{8}"
+              [title]="'Formato: AAAAMMDD (ej. 20261231)'" /></label>
+          <label><span>Venc. Seguro</span>
+            <input [(ngModel)]="model.insuranceExpiry" name="insuranceExpiry" type="text"
+              placeholder="aaaammdd" maxlength="8" pattern="\\d{8}"
+              [title]="'Formato: AAAAMMDD (ej. 20261231)'" /></label>
+          <label><span>Celular</span>
+            <input [(ngModel)]="model.phone" name="phone" type="text" maxlength="20" /></label>
+          <label><span>Modelo (año)</span>
+            <select [(ngModel)]="model.vehicleYear" name="vehicleYear">
+              <option value="">— Seleccionar —</option>
+              <option *ngFor="let yr of vehicleYears" [value]="yr">{{ yr }}</option>
+            </select></label>
+          <label><span>Marca</span>
+            <input [(ngModel)]="model.vehicleBrand" name="vehicleBrand" type="text" maxlength="60" /></label>
           <label><span>Estatus</span><select [(ngModel)]="model.status" name="status">
             <option value="OK">OK</option><option value="PENDIENTE">PENDIENTE</option><option value="INACTIVO">INACTIVO</option>
           </select></label>
@@ -73,7 +98,6 @@ import { MemberStore, MemberProfile } from '../data/member.store';
         <p *ngIf="validationError" role="alert">{{ validationError }}</p>
         <div class="action-row">
           <button type="button" class="primary" [disabled]="busy" (click)="save()">Guardar</button>
-          <button type="button" class="secondary" [disabled]="busy" (click)="reset()">Restaurar</button>
           <button type="button" class="secondary" [disabled]="busy" (click)="showList()">Cancelar</button>
         </div>
       </article>
@@ -81,13 +105,26 @@ import { MemberStore, MemberProfile } from '../data/member.store';
   `,
   styles: [
     `
-      .member-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 0; border-bottom: 1px solid #eee; }
+      :host { display: block; width: 100%; }
+      .member-row { padding: 14px 16px; border: 1px solid #eadff2; border-radius: 14px; background: #fbf9fd; transition: border-color .2s ease, background .2s ease; }
+      .member-row + .member-row { margin-top: 10px; }
+      .member-row:hover { border-color: #cfa9e2; background: #fff; }
+      .member-main { cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+      .member-main p { display: flex; align-items: center; gap: 8px; color: #624779; }
+      .member-main .chevron { font-size: 0.7rem; color: #8b3dba; }
+      .member-detail { margin-top: 14px; padding-top: 14px; border-top: 1px solid #eadff2; }
+      .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; margin: 0 0 16px; }
+      .detail-grid dt { font-size: 0.78rem; color: #765b8b; font-weight: 700; }
+      .detail-grid dd { margin: 2px 0 0; color: #32223f; font-weight: 600; }
+      .detail-full { grid-column: 1 / -1; }
       .member-row .action-row { margin-top: 0; }
       .capture-page {
         display: grid;
         gap: 18px;
-        max-width: 760px;
-        color: #463255;
+        max-width: 880px;
+        width: 100%;
+        margin: 0 auto;
+        color: #32223f;
       }
 
       .eyebrow {
@@ -111,21 +148,24 @@ import { MemberStore, MemberProfile } from '../data/member.store';
       }
 
       .capture-card {
-        border: 1px solid rgba(236, 72, 153, 0.12);
+        border: 1px solid #ddcce8;
         border-radius: 20px;
-        background: rgba(255, 255, 255, 0.72);
-        padding: 18px;
+        background: #ffffff;
+        padding: 22px;
+        box-shadow: 0 14px 32px rgba(76, 37, 99, 0.08);
       }
 
       .card-head {
         display: flex;
         justify-content: space-between;
         gap: 12px;
-        margin-bottom: 16px;
+        margin-bottom: 18px;
+        padding-bottom: 14px;
+        border-bottom: 1px solid #eee5f3;
       }
 
       .card-head span {
-        color: #8f7aa8;
+        color: #765b8b;
       }
 
       .form-grid {
@@ -141,7 +181,7 @@ import { MemberStore, MemberProfile } from '../data/member.store';
 
       label span {
         font-size: 0.92rem;
-        color: #7d6792;
+        color: #604473;
         font-weight: 600;
       }
 
@@ -149,13 +189,25 @@ import { MemberStore, MemberProfile } from '../data/member.store';
       select,
       textarea {
         width: 100%;
-        border-radius: 14px;
-        border: 1px solid rgba(168, 85, 247, 0.18);
-        background: rgba(255, 255, 255, 0.9);
-        color: #3a214e;
+        border-radius: 12px;
+        border: 1px solid #cdb9dd;
+        background: #fbf9fd;
+        color: #32223f;
         padding: 12px 14px;
         outline: none;
+        transition: border-color .2s ease, box-shadow .2s ease, background .2s ease;
       }
+
+      input:hover,
+      select:hover,
+      textarea:hover { border-color: #b58bc9; background: #fff; }
+
+      input:focus,
+      select:focus,
+      textarea:focus { border-color: #9b46bd; background: #fff; box-shadow: 0 0 0 3px rgba(155, 70, 189, 0.16); }
+
+      input::placeholder,
+      textarea::placeholder { color: #806b8d; }
 
       textarea {
         resize: vertical;
@@ -185,14 +237,30 @@ import { MemberStore, MemberProfile } from '../data/member.store';
       }
 
       .action-row .secondary {
-        background: rgba(37, 99, 235, 0.18);
-        color: #1d4ed8;
+        background: #f1eafa;
+        color: #5b2b79;
+        border: 1px solid #d9c5e8;
       }
 
       .save-note {
         margin-top: 12px;
         color: #166534;
         font-weight: 600;
+      }
+
+      [role='alert'] {
+        padding: 12px 14px;
+        border: 1px solid #efb7c7;
+        border-radius: 12px;
+        background: #fff5f7;
+        color: #8c2342;
+      }
+
+      [role='status'] {
+        padding: 12px 14px;
+        border: 1px solid #b8dec7;
+        border-radius: 12px;
+        background: #f2fbf5;
       }
 
       @media (max-width: 768px) {
@@ -209,11 +277,13 @@ import { MemberStore, MemberProfile } from '../data/member.store';
         .action-row button {
           width: 100%;
         }
+
+        .capture-card { padding: 16px; }
       }
     `,
   ],
 })
-export class CapturePage implements OnDestroy {
+export class CapturePage {
   private readonly changeDetector = inject(ChangeDetectorRef);
   private readonly route = inject(ActivatedRoute);
   private readonly store = inject(MemberStore);
@@ -227,23 +297,9 @@ export class CapturePage implements OnDestroy {
   protected validationError = '';
   protected syncError = '';
   protected busy = false;
-  protected draft: { base: AppStateDto; state: AppStateDto } | null = null;
-  protected remoteState: AppStateDto | null = null;
-  protected remoteChanges: string[] = [];
-  private readonly draftKey = 'base580-captura-borrador-v1';
-  protected viewingCurrent = false;
+  protected expandedId: string | null = null;
 
   constructor() {
-    try {
-      const saved = localStorage.getItem(this.draftKey);
-      if (saved) {
-        const draft = JSON.parse(saved);
-        if (draft?.base && Array.isArray(draft?.state?.members)) {
-          this.draft = draft;
-          this.store.applyState(draft.state);
-        }
-      }
-    } catch { this.syncError = 'No se pudo recuperar el borrador local.'; }
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
       const id = params.get('id');
       if (id && this.sync.loadStatus() === 'ready') this.edit(id);
@@ -252,17 +308,17 @@ export class CapturePage implements OnDestroy {
     });
   }
 
-  ngOnDestroy(): void {
-    const shared = this.sync.currentServerState();
-    if (this.draft && shared) this.store.applyState(shared);
-  }
-
   protected get members(): MemberProfile[] { return this.store.membersList(); }
 
   private emptyMember(): MemberProfile {
     return { id: '', name: '', memberType: '', employee: '', site: '', plate: '', sticker: '', expiry: '',
       status: 'PENDIENTE', dayTickets: 0, nightTickets: 0, totalTickets: 0,
-      nightSaving: 'N/A', personalSaving: 'N/A', cardPayment: 'N/A', history: [], notes: '' };
+      nightSaving: 'N/A', personalSaving: 'N/A', cardPayment: 'N/A', history: [], notes: '',
+      licenseExpiry: '', insuranceExpiry: '', phone: '', vehicleYear: '', vehicleBrand: '' };
+  }
+
+  protected toggle(id: string): void {
+    this.expandedId = this.expandedId === id ? null : id;
   }
 
   protected showList(): void {
@@ -306,22 +362,38 @@ export class CapturePage implements OnDestroy {
       this.validationError = 'Ya existe un socio con ese ID.';
       return;
     }
-    if (this.editingId) {
-      if (!this.store.member(this.editingId)) {
-        this.validationError = 'El socio ya no existe. Vuelve a la lista.';
-        return;
-      }
-      this.store.updateMember(this.editingId, { name, site: this.model.site, plate: this.model.plate,
-        sticker: this.model.sticker, expiry: this.model.expiry, status: this.model.status, notes: this.model.notes });
+    const isEdit = !!this.editingId;
+    if (isEdit && !this.store.member(this.editingId!)) {
+      this.validationError = 'El socio ya no existe. Vuelve a la lista.';
+      return;
+    }
+    if (isEdit) {
+      this.store.updateMember(this.editingId!, { name, site: this.model.site, plate: this.model.plate,
+        sticker: this.model.sticker, expiry: this.model.expiry, status: this.model.status, notes: this.model.notes,
+        licenseExpiry: this.model.licenseExpiry, insuranceExpiry: this.model.insuranceExpiry,
+        phone: this.model.phone, vehicleYear: this.model.vehicleYear, vehicleBrand: this.model.vehicleBrand });
     } else if (!this.store.createMember({ ...this.model, id, name })) {
       this.validationError = 'No se pudo crear el socio; verifica el ID y el nombre.';
       return;
     }
-    this.editingId = id;
-    this.baseline = structuredClone(this.store.member(id)!);
-    this.model = structuredClone(this.baseline);
     this.validationError = '';
-    this.saveDraft();
+    this.busy = true;
+    try {
+      const result = await this.sync.saveToBackend();
+      this.store.applyState(result);
+      this.editingId = id;
+      this.baseline = structuredClone(this.store.member(id)!);
+      this.model = structuredClone(this.baseline);
+      this.syncError = '';
+      this.message = isEdit ? 'Socio actualizado y guardado en el servidor.' : 'Socio creado y guardado en el servidor.';
+    } catch (error: any) {
+      this.syncError = error?.status === 409
+        ? 'La versión del servidor cambió. Recarga desde el servidor e inténtalo de nuevo.'
+        : 'No se pudo guardar en el servidor. Revisa la conexión e inténtalo de nuevo.';
+    } finally {
+      this.busy = false;
+      this.changeDetector.markForCheck();
+    }
   }
 
   protected async remove(member: MemberProfile): Promise<void> {
@@ -331,17 +403,32 @@ export class CapturePage implements OnDestroy {
       this.message = 'El socio ya no existe.';
       return;
     }
-    this.saveDraft();
+    this.busy = true;
+    try {
+      const result = await this.sync.saveToBackend();
+      this.store.applyState(result);
+      this.syncError = '';
+      this.message = `Socio ${member.id} eliminado.`;
+      this.showList();
+    } catch (error: any) {
+      this.syncError = error?.status === 409
+        ? 'La versión del servidor cambió. Recarga desde el servidor e inténtalo de nuevo.'
+        : 'No se pudo eliminar en el servidor. Recarga e inténtalo de nuevo.';
+    } finally {
+      this.busy = false;
+      this.changeDetector.markForCheck();
+    }
   }
 
   protected async reload(): Promise<void> {
-    if (this.busy || this.sync.pendingChanges()) return;
+    if (this.busy) return;
     this.busy = true;
     try {
       await this.sync.reloadFromBackend();
       const id = this.route.snapshot?.paramMap.get('id');
       if (id) this.edit(id);
       else this.showList();
+      this.syncError = '';
     } catch {
       // El estado de carga muestra el error y permite otro intento.
     } finally {
@@ -350,140 +437,10 @@ export class CapturePage implements OnDestroy {
     }
   }
 
-  protected async retry(): Promise<void> { await this.publish(); }
-
-  private saveDraft(): void {
-    const base = this.draft?.base ?? this.sync.currentServerState();
-    if (!base) { this.syncError = 'No se conoce la versión original del servidor.'; return; }
-    const draft = { base, state: this.store.snapshot() };
-    try {
-      localStorage.setItem(this.draftKey, JSON.stringify(draft));
-      this.draft = draft;
-      this.viewingCurrent = false;
-      this.syncError = '';
-      this.message = 'Borrador guardado en este navegador. Aún no está publicado.';
-    } catch { this.syncError = 'No se pudo guardar el borrador en este navegador.'; }
-  }
-
-  protected async compareCurrent(): Promise<void> {
-    this.busy = true;
-    try {
-      const current = await this.sync.readCurrent();
-      const base = this.draft?.base ?? this.sync.currentServerState();
-      this.remoteChanges = this.describeChanges(base, current);
-      this.remoteState = current;
-      this.syncError = '';
-    } catch { this.syncError = 'No se pudo consultar la versión actual.'; }
-    finally { this.busy = false; this.changeDetector.markForCheck(); }
-  }
-
-  private describeChanges(base: AppStateDto | null, current: AppStateDto): string[] {
-    if (!base) return ['No hay una versión anterior para comparar.'];
-    const labels: Record<string, string> = { name: 'Nombre', memberType: 'Tipo de socio', employee: 'Empleado', site: 'Sitio', plate: 'Placas', sticker: 'Engomado', expiry: 'Vencimiento', status: 'Estatus', notes: 'Observaciones', dayTickets: 'Boletos diurnos', nightTickets: 'Boletos nocturnos', totalTickets: 'Boletos totales', nightSaving: 'Ahorro nocturno', personalSaving: 'Ahorro personal', cardPayment: 'Pago con tarjeta' };
-    const before = new Map(base.members.map(m => [m.id, m]));
-    const after = new Map(current.members.map(m => [m.id, m]));
-    const changes: string[] = [];
-    for (const id of new Set([...before.keys(), ...after.keys()])) {
-      const a = before.get(id), b = after.get(id);
-      if (!a) { changes.push(`Socio ${id} agregado: ${b?.name}`); continue; }
-      if (!b) { changes.push(`Socio ${id} eliminado: ${a.name}`); continue; }
-      for (const key of Object.keys(labels) as (keyof typeof labels)[]) {
-        const field = key as keyof typeof a;
-        if (a[field] !== b[field]) changes.push(`Socio ${id}, ${labels[key]}: ${a[field] || '—'} → ${b[field] || '—'}`);
-      }
-      if (JSON.stringify(a) !== JSON.stringify(b) && !changes.some(change => change.startsWith(`Socio ${id},`))) changes.push(`Socio ${id}: otros datos cambiaron.`);
-    }
-    if (JSON.stringify(base.catalogs) !== JSON.stringify(current.catalogs)) changes.push('Los catálogos cambiaron.');
-    if (JSON.stringify(base.auditTrail) !== JSON.stringify(current.auditTrail)) changes.push('La auditoría cambió.');
-    return changes.length ? changes : ['No hay cambios en los datos respecto de tu versión inicial.'];
-  }
-
-  protected showCurrent(): void {
-    if (!this.remoteState) return;
-    if (this.draft) this.store.applyState(this.remoteState);
-    else this.sync.syncLocalState(this.remoteState);
-    this.viewingCurrent = true;
-    this.remoteState = null;
-    this.showList();
-    this.message = this.draft ? 'Ves la versión actual. Tu borrador sigue guardado en este navegador.' : 'Ves la versión actual.';
-  }
-
-  protected showDraft(): void {
-    if (!this.draft) return;
-    this.store.applyState(this.draft.state);
-    this.viewingCurrent = false;
-    this.showList();
-    this.message = 'Ves tu borrador local.';
-  }
-
-  protected rebaseDraft(): void {
-    if (!this.draft || !this.remoteState) return;
-    const { base, state: local } = this.draft;
-    const remote = this.remoteState;
-    const merged = structuredClone(remote);
-    const original = new Map(base.members.map(member => [member.id, member]));
-    const edits = new Map(local.members.map(member => [member.id, member]));
-    const current = new Map(merged.members.map(member => [member.id, member]));
-    const conflicts: string[] = [];
-    const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-    for (const id of new Set([...original.keys(), ...edits.keys()])) {
-      const prior = original.get(id), edited = edits.get(id), actual = current.get(id);
-      if (equal(prior, edited)) continue;
-      if (!prior || !edited || !actual) {
-        if (!equal(prior, actual) && !equal(edited, actual)) conflicts.push(`Socio ${id}: creación o eliminación`);
-        if (edited) current.set(id, structuredClone(edited)); else current.delete(id);
-        continue;
-      }
-      const result = structuredClone(actual) as unknown as Record<string, unknown>;
-      const oldFields = prior as unknown as Record<string, unknown>;
-      const newFields = edited as unknown as Record<string, unknown>;
-      const actualFields = actual as unknown as Record<string, unknown>;
-      for (const key of Object.keys(newFields)) {
-        if (equal(oldFields[key], newFields[key])) continue;
-        if (!equal(oldFields[key], actualFields[key]) && !equal(newFields[key], actualFields[key])) conflicts.push(`Socio ${id}: ${key}`);
-        result[key] = structuredClone(newFields[key]);
-      }
-      current.set(id, result as unknown as MemberProfile);
-    }
-    merged.members = [...current.values()];
-    for (const id of new Set([...Object.keys(base.auditTrail), ...Object.keys(local.auditTrail)])) {
-      if (equal(base.auditTrail[id], local.auditTrail[id])) continue;
-      if (!equal(base.auditTrail[id], remote.auditTrail[id]) && !equal(local.auditTrail[id], remote.auditTrail[id])) conflicts.push(`Socio ${id}: auditoría`);
-      if (local.auditTrail[id]) merged.auditTrail[id] = structuredClone(local.auditTrail[id]);
-      else delete merged.auditTrail[id];
-    }
-    const warning = conflicts.length ? `Hay cambios en los mismos datos: ${conflicts.join(', ')}. Se conservarán tus valores locales en esos campos.` : 'Se incorporarán los cambios actuales y se conservarán tus cambios locales.';
-    if (!window.confirm(`${warning}\n\nEsto actualiza tu borrador local; aún tendrás que publicarlo. ¿Continuar?`)) return;
-    const draft = { base: structuredClone(remote), state: merged };
-    try {
-      localStorage.setItem(this.draftKey, JSON.stringify(draft));
-      this.draft = draft;
-      this.remoteState = null;
-      this.showDraft();
-      this.message = 'Borrador actualizado con la versión actual. Revísalo antes de publicarlo.';
-    } catch { this.syncError = 'No se pudo actualizar el borrador en este navegador.'; }
-  }
-
-  protected async publish(): Promise<void> {
-    if (!this.draft || this.busy) return;
-    const draft = this.draft;
-    this.busy = true;
-    try {
-      const result = await this.sync.publishDraft(draft.state, draft.base);
-      localStorage.removeItem(this.draftKey);
-      this.draft = null;
-      this.remoteState = null;
-      this.viewingCurrent = false;
-      this.message = `Borrador publicado correctamente.`;
-      this.syncError = '';
-      this.store.applyState(result);
-    } catch (error: any) {
-      this.syncError = error?.status === 409 ? 'La versión actual cambió. Tu borrador sigue guardado; consulta los cambios antes de continuar.' : 'No se pudo publicar. Tu borrador sigue guardado en este navegador.';
-      if (error?.status === 409) {
-        try { const current = await this.sync.readCurrent(); this.remoteChanges = this.describeChanges(draft.base, current); this.remoteState = current; } catch { /* el borrador sigue disponible */ }
-      }
-    } finally { this.busy = false; this.changeDetector.markForCheck(); }
-  }
+  protected readonly vehicleYears: string[] = (() => {
+    const yr = new Date().getFullYear();
+    return Array.from({ length: yr - 1979 }, (_, i) => String(yr - i));
+  })();
 
   protected reset(): void {
     this.model = structuredClone(this.baseline);

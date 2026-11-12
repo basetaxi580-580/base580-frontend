@@ -34,6 +34,11 @@ export type MemberDocumentDto = {
   personalSaving: string;
   cardPayment: string;
   notes: string;
+  licenseExpiry?: string;
+  insuranceExpiry?: string;
+  phone?: string;
+  vehicleYear?: string;
+  vehicleBrand?: string;
   history: MemberHistoryEntry[];
 };
 
@@ -108,10 +113,13 @@ export class BackendSyncService {
       throw new Error('El estado del servidor no se ha cargado.');
     }
     this.pendingChanges.set(true);
-    const response = await firstValueFrom(this.api.saveState(this.store.snapshot(), this.serverState?.updatedAt ?? 'none'));
-    this.serverState = structuredClone(response);
-    this.pendingChanges.set(false);
-    return response;
+    try {
+      const response = await firstValueFrom(this.api.saveState(this.store.snapshot(), this.serverState?.updatedAt ?? 'none'));
+      this.serverState = structuredClone(response);
+      return response;
+    } finally {
+      this.pendingChanges.set(false);
+    }
   }
 
   syncLocalState(state: AppStateDto): void {
