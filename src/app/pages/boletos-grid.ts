@@ -98,6 +98,11 @@ export function parseTsv(texto: string): string[][] {
   return lineas.map((linea) => linea.split('\t'));
 }
 
+/** Serializa una matriz rectangular para copiarla y pegarla en otra rejilla. */
+export function serializarTsv(matriz: string[][]): string {
+  return matriz.map((fila) => fila.join('\t')).join('\n');
+}
+
 export function leerNumero(texto: string): number | null {
   let limpio = texto.trim().replace(/[$\s]/g, '');
   if (!limpio || limpio === '-') return null;
