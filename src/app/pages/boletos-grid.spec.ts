@@ -1,4 +1,4 @@
-import { moverEnSecuenciaEnter, SecuenciaEnter } from './boletos-grid';
+import { moverEnSecuenciaEnter, SecuenciaEnter, serializarTsv } from './boletos-grid';
 
 describe('navegación Enter por bloques de captura', () => {
   const bloques: SecuenciaEnter[] = [
@@ -21,5 +21,9 @@ describe('navegación Enter por bloques de captura', () => {
 
   it('conserva la celda cuando no hay bloque vecino', () => {
     expect(moverEnSecuenciaEnter(bloques, 5, 10, 1)).toEqual({ fila: 5, col: 10 });
+  });
+
+  it('serializa rangos rectangulares con filas y columnas', () => {
+    expect(serializarTsv([['1', '2'], ['3', '4']])).toBe('1\t2\n3\t4');
   });
 });

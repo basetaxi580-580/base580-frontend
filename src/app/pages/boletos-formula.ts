@@ -50,6 +50,18 @@ export function indiceColumna(letra: string): number {
   return n - 1;
 }
 
+/** Traslada referencias relativas de una fórmula al pegarla en otro rango. */
+export function trasladarFormula(formula: string, deltaFila: number, deltaCol: number): string {
+  return formula.replace(/(^|[^A-Za-z0-9_])((?:'(?:[^']|'')*'|[A-Za-z0-9_.ÁÉÍÓÚÑáéíóúñ]+)!)?(\$?)([A-Za-z]+)(\$?)(\d+)/g, (_todo, antes: string, hoja: string | undefined, absolutoCol: string, letras: string, absolutoFila: string, filaTexto: string) => {
+    const col = indiceColumna(letras);
+    const fila = Number(filaTexto);
+    if (col < 0 || !Number.isFinite(fila)) return _todo;
+    const nuevaCol = absolutoCol ? col : Math.max(0, col + deltaCol);
+    const nuevaFila = absolutoFila ? fila : Math.max(1, fila + deltaFila);
+    return `${antes}${hoja ?? ''}${absolutoCol}${letraColumna(nuevaCol)}${absolutoFila}${nuevaFila}`;
+  });
+}
+
 type Token =
   | { t: 'num'; v: number }
   | { t: 'ref'; v: string }

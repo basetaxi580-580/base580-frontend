@@ -1,5 +1,5 @@
 import libroJson from './boletos-libro.data.json';
-import { evaluarFormula } from './boletos-formula';
+import { evaluarFormula, trasladarFormula } from './boletos-formula';
 import { COLUMNAS_BASE_LIBRO, FILAS_BASE_LIBRO, LibroJson, MotorLibro, altoFila, anchoColumna, columnasDeHoja, formatear, filasDeHoja, fusionarCapturas, redondearExcel } from './boletos-libro';
 
 const libro = libroJson as unknown as LibroJson;
@@ -163,6 +163,11 @@ describe('Réplica de PAGO BOLETOS 2026.xlsx', () => {
     expect(evaluarFormula('=+PTE!D25+MANUALES!R9', leer)).toBe(4);
     expect(evaluarFormula("=SUM('BASE PTE'!B3:B4)", leer)).toBe(4);
     expect(leidas).toEqual(['BASE NTE 25 !F20', 'K3', 'PTE!D25', 'MANUALES!R9', 'BASE PTE!B3', 'BASE PTE!B4']);
+  });
+
+  it('traslada referencias relativas de fórmulas al pegar un rango', () => {
+    expect(trasladarFormula('=A1+$B2+SUMA(C1:C3)', 2, 1)).toBe('=B3+$B4+SUMA(D3:D5)');
+    expect(trasladarFormula("='BASE NTE 26'!F3", 1, 2)).toBe("='BASE NTE 26'!H4");
   });
 
   it('recalcula en cadena de la captura al TOTAL', () => {

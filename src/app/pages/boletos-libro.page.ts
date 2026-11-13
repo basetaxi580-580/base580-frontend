@@ -14,7 +14,7 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { BoletosLibroApiService, ConflictoLibro, EstadoLibro, PestanaPersonalizada } from '../data/boletos-libro-api.service';
-import { moverEnSecuenciaEnter, parseTsv, SecuenciaEnter } from './boletos-grid';
+import { moverEnSecuenciaEnter, parseTsv, SecuenciaEnter, serializarTsv } from './boletos-grid';
 import {
   EstiloLibro,
   HojaLibro,
@@ -30,6 +30,7 @@ import {
   indiceColumna,
   mismasCapturas,
 } from './boletos-libro';
+import { trasladarFormula } from './boletos-formula';
 
 type CeldaVista = {
   ref: string;
@@ -52,11 +53,13 @@ type MenuCtx = { x: number; y: number; tipo: 'celda' | 'columna' | 'fila' | 'pes
 type EstadoGuardado = 'cargando' | 'guardado' | 'guardando' | 'pendiente' | 'error' | 'sin-conexion';
 type Instantanea = { estructura: string; capturas: Record<string, string>; formatos: Record<string, string>; pestanas: PestanaPersonalizada[]; ordenPestanas: string[] };
 type Respaldo = { base: Instantanea; actual: Instantanea };
+type PaqueteRango = { origen: Seleccion; matriz: string[][]; formulas: (string | null)[][]; formatos: (EstiloLibro | null)[][] };
 
 const CLAVE_RESPALDO = 'boletos-libro-respaldo';
 const CLAVE_HOJA = 'boletos-libro-hoja';
 const MAX_HISTORIAL = 50;
 const MAX_CONFLICTOS = 5;
+const MIME_RANGO_LIBRO = 'application/x-base580-range';
 /** Ancho de la columna de números de fila (igual al de `col.c-num`). */
 const ANCHO_NUMEROS = 40;
 
@@ -167,6 +170,7 @@ const ANCHO_NUMEROS = 40;
                       [attr.rowspan]="c.rowspan ?? null"
                       [style]="c.css"
                       (mousedown)="seleccionar(fi, ci, $event)"
+                      (mouseenter)="extenderSeleccion(fi, ci, $event)"
                       (dblclick)="editarActual()"
                       (contextmenu)="menuCelda(fi, ci, $event)"
                     >
@@ -481,6 +485,8 @@ export class BoletosLibroPage implements OnInit {
   /** true cuando la edición empezó tecleando (las flechas confirman y mueven, como en Excel). */
   private modoEntrada = false;
   private redimensionando: Redimension | null = null;
+  /** Celda de origen mientras el usuario arrastra una selección con el mouse. */
+  private seleccionando: Seleccion | null = null;
 
   constructor() {
     // El editor aparece en el siguiente render: enfocarlo en cuanto existe.
@@ -523,6 +529,7 @@ export class BoletosLibroPage implements OnInit {
   protected cerrarMenuEsc(): void {
     this.cerrarMenu();
     this.terminarRedimension();
+    this.terminarSeleccion();
   }
 
   protected iniciarRedimensionColumna(ci: number, event: MouseEvent): void {
@@ -776,13 +783,30 @@ export class BoletosLibroPage implements OnInit {
     // Confirmar antes de mover la selección: el blur del editor llega después del mousedown.
     this.confirmarEdicion();
     this.confirmarBarra();
+    const inicio = event.shiftKey ? this.rangoSeleccion()?.inicio ?? this.sel() : { fila, col };
     this.sel.set({ fila, col });
     if (event.shiftKey) {
-      const inicio = this.rangoSeleccion()?.inicio ?? this.sel();
       this.rangoSeleccion.set({ inicio, fin: { fila, col } });
     } else {
       this.rangoSeleccion.set({ inicio: { fila, col }, fin: { fila, col } });
     }
+    this.seleccionando = inicio;
+    event.preventDefault();
+    this.enfocarRejilla();
+  }
+
+  protected extenderSeleccion(fila: number, col: number, event: MouseEvent): void {
+    const inicio = this.seleccionando;
+    if (!inicio || (event.buttons & 1) !== 1) return;
+    this.sel.set({ fila, col });
+    this.rangoSeleccion.set({ inicio, fin: { fila, col } });
+    event.preventDefault();
+  }
+
+  @HostListener('window:mouseup')
+  protected terminarSeleccion(): void {
+    if (!this.seleccionando) return;
+    this.seleccionando = null;
   }
 
   protected esSeleccionada(fila: number, col: number): boolean {
@@ -1187,6 +1211,8 @@ export class BoletosLibroPage implements OnInit {
         event.preventDefault();
         return this.editarActual();
       case 'Delete':
+        event.preventDefault();
+        return this.borrarSeleccion();
       case 'Backspace':
         event.preventDefault();
         return this.borrarActual();
@@ -1201,10 +1227,38 @@ export class BoletosLibroPage implements OnInit {
     if (this.editando() !== null) return;
     const motor = this.motor();
     const hoja = this.hoja();
-    const ref = this.refActiva();
-    if (!motor || !hoja || !ref) return;
-    const valor = motor.valor(hoja.name, ref);
-    const texto = valor.tipo === 'numero' ? String(valor.n) : valor.tipo === 'texto' ? valor.t : valor.tipo === 'error' ? valor.e : '';
+    const vista = this.vista();
+    const rango = this.rangoSeleccion();
+    if (!motor || !hoja || !vista || !rango) return;
+    const minFila = Math.min(rango.inicio.fila, rango.fin.fila);
+    const maxFila = Math.max(rango.inicio.fila, rango.fin.fila);
+    const minCol = Math.min(rango.inicio.col, rango.fin.col);
+    const maxCol = Math.max(rango.inicio.col, rango.fin.col);
+    const formatos = Array.from({ length: maxFila - minFila + 1 }, (_, i) =>
+      Array.from({ length: maxCol - minCol + 1 }, (_, j) => {
+        const celda = vista.filas[minFila + i]?.celdas[minCol + j];
+        return celda ? motor.estilo(hoja.name, celda.ref) : null;
+      }),
+    );
+    const formulas = Array.from({ length: maxFila - minFila + 1 }, (_, i) =>
+      Array.from({ length: maxCol - minCol + 1 }, (_, j) => {
+        const celda = vista.filas[minFila + i]?.celdas[minCol + j];
+        if (!celda) return null;
+        const texto = motor.textoEdicion(hoja.name, celda.ref);
+        return texto.startsWith('=') ? texto : null;
+      }),
+    );
+    const matriz = Array.from({ length: maxFila - minFila + 1 }, (_, i) =>
+      Array.from({ length: maxCol - minCol + 1 }, (_, j) => {
+        const celda = vista.filas[minFila + i]?.celdas[minCol + j];
+        if (!celda) return '';
+        const valor = motor.valor(hoja.name, celda.ref);
+        return valor.tipo === 'numero' ? String(valor.n) : valor.tipo === 'texto' ? valor.t : valor.tipo === 'error' ? valor.e : '';
+      }),
+    );
+    const texto = serializarTsv(matriz);
+    const paquete = JSON.stringify({ version: 2, origen: { fila: minFila, col: minCol }, matriz, formulas, formatos });
+    event.clipboardData?.setData(MIME_RANGO_LIBRO, paquete);
     event.clipboardData?.setData('text/plain', texto);
     event.preventDefault();
   }
@@ -1212,14 +1266,18 @@ export class BoletosLibroPage implements OnInit {
   protected pegar(event: ClipboardEvent): void {
     if (this.editando() !== null) return;
     const texto = event.clipboardData?.getData('text/plain');
+    const paquete = leerPaqueteRango(event.clipboardData?.getData(MIME_RANGO_LIBRO) ?? '');
     const vista = this.vista();
     const hoja = this.hoja();
     const motor = this.motor();
-    if (!texto || !vista || !hoja || !motor) return;
+    if ((!texto && !paquete) || !vista || !hoja || !motor) return;
     event.preventDefault();
-    const matriz = parseTsv(texto);
+    const matriz = paquete?.matriz ?? parseTsv(texto ?? '');
     const { fila, col } = this.sel();
+    const deltaFila = paquete ? fila - paquete.origen.fila : 0;
+    const deltaCol = paquete ? col - paquete.origen.col : 0;
     const cambios: { hoja: string; ref: string; texto: string }[] = [];
+    const formatos: { hoja: string; ref: string; estilo: EstiloLibro | null }[] = [];
     let saltadas = 0;
     matriz.forEach((renglon, i) =>
       renglon.forEach((valor, j) => {
@@ -1228,11 +1286,32 @@ export class BoletosLibroPage implements OnInit {
         if (!c || !f) return;
         const ref = `${c.letra}${f.n}`;
         if (motor.protegida(hoja.name, ref)) saltadas++;
-        else cambios.push({ hoja: hoja.name, ref, texto: valor.trim() });
+        else {
+          const formula = paquete?.formulas[i]?.[j];
+          cambios.push({ hoja: hoja.name, ref, texto: formula ? trasladarFormula(formula, deltaFila, deltaCol) : valor.trim() });
+          formatos.push({ hoja: hoja.name, ref, estilo: paquete?.formatos[i]?.[j] ?? null });
+        }
       }),
     );
-    this.aplicar(cambios);
+    this.aplicarPegado(cambios, formatos);
     if (saltadas) this.avisar(`Se omitieron ${saltadas} celda(s) con fórmula protegida.`);
+  }
+
+  private aplicarPegado(
+    cambios: { hoja: string; ref: string; texto: string }[],
+    formatos: { hoja: string; ref: string; estilo: EstiloLibro | null }[],
+  ): void {
+    const motor = this.motor();
+    if (!motor) return;
+    const antes = this.instantanea();
+    for (const cambio of cambios) motor.establecer(cambio.hoja, cambio.ref, cambio.texto);
+    for (const formato of formatos) {
+      motor.limpiarFormato(formato.hoja, formato.ref);
+      if (formato.estilo) motor.establecerFormato(formato.hoja, formato.ref, formato.estilo);
+    }
+    if (this.mismasInstantaneas(antes, this.instantanea())) return;
+    this.registrarDeshacer(antes);
+    this.trasCambio();
   }
 
   protected deshacerCambio(): void {
@@ -1397,7 +1476,46 @@ export class BoletosLibroPage implements OnInit {
       this.avisar('Esta celda tiene una fórmula del Excel y está protegida: se calcula sola.');
       return;
     }
-    this.aplicar([{ hoja: hoja.name, ref, texto: '' }]);
+    this.aplicarBorrado([{ hoja: hoja.name, ref }]);
+  }
+
+  private borrarSeleccion(): void {
+    const motor = this.motor();
+    const hoja = this.hoja();
+    const vista = this.vista();
+    const rango = this.rangoSeleccion();
+    if (!motor || !hoja || !vista || !rango) return;
+    const minFila = Math.min(rango.inicio.fila, rango.fin.fila);
+    const maxFila = Math.max(rango.inicio.fila, rango.fin.fila);
+    const minCol = Math.min(rango.inicio.col, rango.fin.col);
+    const maxCol = Math.max(rango.inicio.col, rango.fin.col);
+    const cambios: { hoja: string; ref: string }[] = [];
+    let protegidas = 0;
+    for (let fila = minFila; fila <= maxFila; fila++) {
+      for (let col = minCol; col <= maxCol; col++) {
+        const celda = vista.filas[fila]?.celdas[col];
+        if (!celda) continue;
+        if (motor.protegida(hoja.name, celda.ref)) {
+          protegidas++;
+        } else cambios.push({ hoja: hoja.name, ref: celda.ref });
+      }
+    }
+    this.aplicarBorrado(cambios);
+    if (protegidas) this.avisar(`Se omitieron ${protegidas} celda(s) con fórmula protegida.`);
+  }
+
+  private aplicarBorrado(celdas: { hoja: string; ref: string }[]): void {
+    const motor = this.motor();
+    if (!motor) return;
+    const antes = this.instantanea();
+    for (const celda of celdas) {
+      if (motor.protegida(celda.hoja, celda.ref)) continue;
+      motor.establecer(celda.hoja, celda.ref, '');
+      motor.limpiarFormato(celda.hoja, celda.ref);
+    }
+    if (this.mismasInstantaneas(antes, this.instantanea())) return;
+    this.registrarDeshacer(antes);
+    this.trasCambio();
   }
 
   /** Aplica uno o más cambios como un solo paso de deshacer. */
@@ -1898,4 +2016,19 @@ function mismasPestanas(a: PestanaPersonalizada[], b: PestanaPersonalizada[]): b
 
 function mismoOrden(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((nombre, i) => nombre === b[i]);
+}
+
+function leerPaqueteRango(raw: string): PaqueteRango | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<PaqueteRango> & { version?: number };
+    if (parsed.version !== 2 || !parsed.origen || !Array.isArray(parsed.matriz) || !Array.isArray(parsed.formulas) || !Array.isArray(parsed.formatos)) return null;
+    if (!Number.isInteger(parsed.origen.fila) || !Number.isInteger(parsed.origen.col)) return null;
+    if (!parsed.matriz.every((fila) => Array.isArray(fila) && fila.every((valor) => typeof valor === 'string'))) return null;
+    if (!parsed.formulas.every((fila) => Array.isArray(fila) && fila.every((formula) => formula === null || typeof formula === 'string'))) return null;
+    if (!parsed.formatos.every((fila) => Array.isArray(fila))) return null;
+    return { origen: parsed.origen, matriz: parsed.matriz, formulas: parsed.formulas, formatos: parsed.formatos as (EstiloLibro | null)[][] };
+  } catch {
+    return null;
+  }
 }
