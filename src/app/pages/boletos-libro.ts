@@ -152,9 +152,9 @@ export class MotorLibro {
     return this.contenido(hoja, ref).formula !== null;
   }
 
-  /** Celdas con fórmula en el Excel original: se respetan y no se editan. */
+  /** Se conserva por compatibilidad con la navegación; todas las celdas son editables. */
   protegida(hoja: string, ref: string): boolean {
-    return !!this.hoja(hoja)?.cells[ref]?.[1];
+    return false;
   }
 
   /** Hoja con la que abre el libro (la activa del Excel). */

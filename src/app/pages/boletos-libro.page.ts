@@ -1405,10 +1405,20 @@ export class BoletosLibroPage implements OnInit {
   private aplicarFormato(cambio: Partial<EstiloLibro>): void {
     const motor = this.motor();
     const hoja = this.hoja();
-    const ref = this.refActiva();
-    if (!motor || !hoja || !ref) return;
+    const vista = this.vista();
+    const rango = this.rangoSeleccion();
+    if (!motor || !hoja || !vista || !rango) return;
     const antes = this.instantanea();
-    motor.establecerFormato(hoja.name, ref, cambio);
+    const minFila = Math.min(rango.inicio.fila, rango.fin.fila);
+    const maxFila = Math.max(rango.inicio.fila, rango.fin.fila);
+    const minCol = Math.min(rango.inicio.col, rango.fin.col);
+    const maxCol = Math.max(rango.inicio.col, rango.fin.col);
+    for (let fila = minFila; fila <= maxFila; fila++) {
+      for (let col = minCol; col <= maxCol; col++) {
+        const celda = vista.filas[fila]?.celdas[col];
+        if (celda) motor.establecerFormato(hoja.name, celda.ref, cambio);
+      }
+    }
     if (this.mismasInstantaneas(antes, this.instantanea())) return;
     this.registrarDeshacer(antes);
     this.trasCambio();
@@ -1685,6 +1695,11 @@ export class BoletosLibroPage implements OnInit {
 
   private marcarPendiente(): void {
     if (this.estado() !== 'sin-conexion') this.estado.set('pendiente');
+    if (this.timerGuardado) clearTimeout(this.timerGuardado);
+    this.timerGuardado = setTimeout(() => {
+      this.timerGuardado = null;
+      this.guardar();
+    }, 1500);
   }
 
   protected guardarManual(): void {

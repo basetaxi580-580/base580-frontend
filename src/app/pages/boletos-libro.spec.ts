@@ -201,9 +201,12 @@ describe('Réplica de PAGO BOLETOS 2026.xlsx', () => {
     expect(motor.capturas()).toEqual({});
   });
 
-  it('las celdas con fórmula del Excel quedan protegidas', () => {
+  it('permite editar las celdas con fórmula del Excel', () => {
     const motor = new MotorLibro(libro);
-    expect(motor.protegida('NORTE 26', 'D3')).toBe(true);
+    expect(motor.protegida('NORTE 26', 'D3')).toBe(false);
+    motor.establecer('NORTE 26', 'D3', '=1+2');
+    expect(motor.textoEdicion('NORTE 26', 'D3')).toBe('=1+2');
+    expect(motor.numero('NORTE 26', 'D3')).toBe(3);
     expect(motor.protegida('NORTE 26', 'A3')).toBe(false);
     expect(motor.hojaInicial().name).toBe('TAPO 25');
   });
