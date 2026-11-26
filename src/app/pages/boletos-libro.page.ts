@@ -14,7 +14,7 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { BoletosLibroApiService, ConflictoLibro, EstadoLibro, PestanaPersonalizada } from '../data/boletos-libro-api.service';
-import { moverEnSecuenciaEnter, parseTsv, SecuenciaEnter, serializarTsv } from './boletos-grid';
+import { parseTsv, serializarTsv } from './boletos-grid';
 import {
   EstiloLibro,
   HojaLibro,
@@ -1594,38 +1594,12 @@ export class BoletosLibroPage implements OnInit {
   }
 
   private moverEnter(direccion: 1 | -1): void {
-    const vista = this.vista();
-    const motor = this.motor();
-    const hoja = this.hoja();
-    if (!vista || !motor || !hoja) return;
-    const actual = this.sel();
-    const bloques = this.bloquesEntrada(vista, motor, hoja.name);
-    const siguiente = moverEnSecuenciaEnter(bloques, actual.fila, actual.col, direccion);
-    if (siguiente) {
-      this.sel.set(siguiente);
-      this.rangoSeleccion.set({ inicio: siguiente, fin: siguiente });
-      setTimeout(() => this.rejilla()?.nativeElement.querySelector('td.sel')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
-      return;
-    }
+    // Enter mueve exactamente una fila (abajo con Enter, arriba con Shift+Enter)
+    // en la MISMA columna, como se espera en una hoja de cálculo. Antes avanzaba
+    // por "bloques de captura" tipo Excel y, al terminar un bloque SERV o en una
+    // celda en blanco, saltaba a la columna del siguiente bloque (p. ej. K -> P),
+    // lo que resultaba confuso.
     this.mover(direccion, 0);
-  }
-
-  private bloquesEntrada(vista: Vista, motor: MotorLibro, nombreHoja: string): SecuenciaEnter[] {
-    return vista.cols.flatMap((columna, col) => {
-      const encabezado = motor.textoEdicion(nombreHoja, `${columna.letra}2`).trim().toUpperCase();
-      if (encabezado !== 'SERV') return [];
-      const zona = vista.cols[col + 1];
-      const filas = vista.filas
-        .map((fila, indice) => ({ fila, indice }))
-        .filter(({ fila, indice }) => {
-          if (indice < 2 || motor.protegida(nombreHoja, `${columna.letra}${fila.n}`)) return false;
-          const textoZona = zona ? motor.textoEdicion(nombreHoja, `${zona.letra}${fila.n}`).trim() : '';
-          const textoEntrada = motor.textoEdicion(nombreHoja, `${columna.letra}${fila.n}`).trim();
-          return !!textoZona || !!textoEntrada;
-        })
-        .map(({ indice }) => indice);
-      return filas.length ? [{ col, filas }] : [];
-    });
   }
 
   private enfocarRejilla(): void {
