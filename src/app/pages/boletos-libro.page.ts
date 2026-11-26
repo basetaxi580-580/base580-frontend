@@ -532,6 +532,32 @@ export class BoletosLibroPage implements OnInit {
     this.terminarSeleccion();
   }
 
+  /**
+   * Deshacer (Ctrl+Z) y Rehacer (Ctrl+Y / Ctrl+Shift+Z) a nivel document: así
+   * funcionan aunque el foco no esté en la rejilla (p. ej. tras hacer clic en un
+   * botón o al cargar la página). Si se está editando una celda o fórmula, o el
+   * foco está en un campo de texto, se deja que el navegador deshaga el texto del
+   * propio campo en vez de tocar el libro.
+   */
+  @HostListener('document:keydown', ['$event'])
+  protected atajosHistorial(event: KeyboardEvent): void {
+    if (!(event.ctrlKey || event.metaKey)) return;
+    const tecla = event.key.toLowerCase();
+    if (tecla !== 'z' && tecla !== 'y') return;
+    const objetivo = event.target as HTMLElement | null;
+    if (
+      this.editando() !== null ||
+      this.apuntando() !== null ||
+      objetivo instanceof HTMLInputElement ||
+      objetivo instanceof HTMLTextAreaElement
+    ) {
+      return;
+    }
+    event.preventDefault();
+    if (tecla === 'y' || event.shiftKey) this.rehacerCambio();
+    else this.deshacerCambio();
+  }
+
   protected iniciarRedimensionColumna(ci: number, event: MouseEvent): void {
     if (event.button !== 0) return;
     const vista = this.vista();
@@ -1063,6 +1089,9 @@ export class BoletosLibroPage implements OnInit {
   }
 
   protected teclaEditor(event: KeyboardEvent): void {
+    // El editor vive dentro de la rejilla: sin esto, el mismo keydown lo
+    // reprocesa tecla() al burbujear y el cursor salta dos celdas en vez de una.
+    event.stopPropagation();
     const mover = (fila: number, col: number) => {
       event.preventDefault();
       this.confirmarEdicion();
@@ -1070,6 +1099,8 @@ export class BoletosLibroPage implements OnInit {
     };
     switch (event.key) {
       case 'Enter':
+        event.preventDefault();
+        this.confirmarEdicion();
         return this.moverEnter(event.shiftKey ? -1 : 1);
       case 'Tab':
         return mover(0, event.shiftKey ? -1 : 1);
@@ -1171,17 +1202,8 @@ export class BoletosLibroPage implements OnInit {
       this.guardarManual();
       return;
     }
-    if (ctrl && tecla === 'z') {
-      event.preventDefault();
-      if (event.shiftKey) this.rehacerCambio();
-      else this.deshacerCambio();
-      return;
-    }
-    if (ctrl && tecla === 'y') {
-      event.preventDefault();
-      this.rehacerCambio();
-      return;
-    }
+    // Ctrl+Z / Ctrl+Y los maneja atajosHistorial() a nivel document, para que
+    // funcionen aunque el foco no esté en la rejilla.
     if (ctrl && (tecla === 'b' || tecla === 'i' || tecla === 'u')) {
       event.preventDefault();
       this.alternar(tecla as 'b' | 'i' | 'u');
@@ -1560,10 +1582,14 @@ export class BoletosLibroPage implements OnInit {
     const vista = this.vista();
     if (!vista) return;
     const { fila, col } = this.sel();
-    this.sel.set({
+    const destino = {
       fila: Math.min(vista.filas.length - 1, Math.max(0, fila + deltaFila)),
       col: Math.min(vista.cols.length - 1, Math.max(0, col + deltaCol)),
-    });
+    };
+    this.sel.set(destino);
+    // Colapsar el rango a la celda destino: así el recuadro de selección sigue
+    // a donde se escribe (esSeleccionada se basa en rangoSeleccion).
+    this.rangoSeleccion.set({ inicio: destino, fin: destino });
     setTimeout(() => this.rejilla()?.nativeElement.querySelector('td.sel')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
   }
 
@@ -1577,6 +1603,7 @@ export class BoletosLibroPage implements OnInit {
     const siguiente = moverEnSecuenciaEnter(bloques, actual.fila, actual.col, direccion);
     if (siguiente) {
       this.sel.set(siguiente);
+      this.rangoSeleccion.set({ inicio: siguiente, fin: siguiente });
       setTimeout(() => this.rejilla()?.nativeElement.querySelector('td.sel')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
       return;
     }
